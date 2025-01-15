@@ -3,7 +3,8 @@ from datetime import datetime
 from .databases import schedule_db
 import boto3
 import ffmpeg
-from .config import s3_client, BUCKET_NAME, BLANK_VIDEO_PATH, EVENT_FILE_DIR, OUTPUT_VIDEO_DIR
+from .config import s3_client, BUCKET_NAME, BLANK_VIDEO_PATH, EVENT_FILE_DIR, OUTPUT_VIDEO_DIR,OUTPUT_VIDEO_DIR_FFMPEG
+import subprocess
 
 
 def generate_presigned_url(file_name):
@@ -15,34 +16,49 @@ def generate_presigned_url(file_name):
 
 def generate_event_file(date):
     try:
+        # Fetch schedule for the given date
         schedule = schedule_db.getByQuery({"date": date})
         events = schedule[0]['events'] if schedule else []
 
         lines = []
+        # Start time at the beginning of the day
         current_time = datetime.combine(datetime.fromisoformat(date), datetime.min.time())
 
         for event in sorted(events, key=lambda e: e['start_time']):
             start_time = datetime.fromisoformat(event['start_time'])
             end_time = datetime.fromisoformat(event['end_time'])
 
+            # Fill gap with blank videos if current time is before the event's start time
             if current_time < start_time:
                 gap_duration = (start_time - current_time).total_seconds()
-                lines.append(f"file '{BLANK_VIDEO_PATH}'")
-                lines.append(f"duration {gap_duration}")
+                full_blanks = int(gap_duration // 1)  # Number of 1-second blanks
 
+                # Append full blank video repetitions
+                for _ in range(full_blanks):
+                    lines.append(f"file '{BLANK_VIDEO_PATH}'")
+                    lines.append("duration 1")
+
+            # Append the event video
             file_path = f"https://{BUCKET_NAME}.s3.amazonaws.com/{event['file_name']}"
             lines.append(f"file '{file_path}'")
             duration = (end_time - start_time).total_seconds()
             lines.append(f"duration {duration}")
 
+            # Update current time to the end of the event
             current_time = end_time
 
+        # Fill remaining time to the end of the day (23:59:59) with blank videos
         end_of_day = datetime.combine(datetime.fromisoformat(date), datetime.max.time())
         if current_time < end_of_day:
             remaining_duration = (end_of_day - current_time).total_seconds()
-            lines.append(f"file '{BLANK_VIDEO_PATH}'")
-            lines.append(f"duration {remaining_duration}")
+            full_blanks = int(remaining_duration // 1)
 
+            # Append full blank video repetitions
+            for _ in range(full_blanks):
+                lines.append(f"file '{BLANK_VIDEO_PATH}'")
+                lines.append("duration 1")
+
+        # Write the event file
         event_file_path = os.path.join(EVENT_FILE_DIR, f"{date}.txt")
         with open(event_file_path, 'w') as f:
             f.write('\n'.join(lines))
@@ -56,21 +72,32 @@ def generate_event_file(date):
 def start_stream(date):
     try:
         event_file_path = os.path.join(EVENT_FILE_DIR, f"{date}.txt")
+    
         if not os.path.exists(event_file_path):
             print(f"Event file not found for date {date}")
             return
-
+        print(OUTPUT_VIDEO_DIR_FFMPEG)
+          # FFmpeg command to start the stream
+       # FFmpeg command to start the stream
         command = [
             'ffmpeg',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', event_file_path,
-            '-c:v', 'libx264',
-            '-preset', 'fast',
-            '-f', 'hls',
-            f'{OUTPUT_VIDEO_DIR}/{date}_stream.m3u8'
+            '-f', 'concat',           # Concatenate video files
+            '-safe', '0',             # Allow unsafe file paths
+            '-i', event_file_path,    # Input event file
+            '-c:v', 'libx264',        # Video codec
+            '-preset', 'fast',        # Preset for encoding speed/quality trade-off
+            '-f', 'hls',              # Output format (HTTP Live Streaming)
+            f'{OUTPUT_VIDEO_DIR_FFMPEG}/{date}_stream.m3u8'  # Output file
         ]
-        subprocess.run(command)
+        
+        # Run the FFmpeg command
+        result = subprocess.run(command, capture_output=True, text=True)
+        
+        # Check if the command was successful
+        if result.returncode == 0:
+            print("FFmpeg stream started successfully")
+        else:
+            print(f"FFmpeg failed with error: {result.stderr}")
     except Exception as e:
         print(f"Error starting FFmpeg stream: {e}")
 

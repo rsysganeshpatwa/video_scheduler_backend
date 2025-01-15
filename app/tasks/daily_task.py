@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from ..utils import generate_event_file, start_stream
 import os
 
-EVENT_FILE_DIR = './event_files/'
+EVENT_FILE_DIR = 'event_files/'
 
 def daily_task():
     date = datetime.now().date().isoformat()
@@ -16,3 +16,4 @@ def daily_task():
     # Generate new event file and start stream
     generate_event_file(date)
     start_stream(date)
+    print(f"Daily task completed for date {date}")
