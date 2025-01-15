@@ -1,1 +1,10 @@
-{"data": []}
+{
+   "data": [
+      {
+         "file_name": "example_video.mp4",
+         "bucket_name": "logo-detection-bucket",
+         "duration": 3600,
+         "id": 489722758435532915
+      }
+   ]
+}

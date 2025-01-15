@@ -1,6 +1,9 @@
 import boto3
+import os
 
-s3_client = boto3.client('s3')
+AWS_REGION = os.getenv("AWS_REGION", "eu-north-1")
+
+s3_client =  boto3.client("s3", region_name=AWS_REGION)
 BUCKET_NAME = 'logo-detection-bucket'
 BLANK_VIDEO_PATH = 'blank_video/text_video.mp4'
 EVENT_FILE_DIR = './event_files/'
