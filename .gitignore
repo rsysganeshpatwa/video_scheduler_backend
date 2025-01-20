@@ -4,5 +4,4 @@ app/*.pyc
 app/__pycache__/config.cpython-310.pyc
 app/__pycache__/routes.cpython-310.pyc
 app/__pycache__/scheduler.cpython-310.pyc
-
 app/__pycache__/utils.cpython-310.pyc

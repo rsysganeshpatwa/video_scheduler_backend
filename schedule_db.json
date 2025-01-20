@@ -1,60 +1,57 @@
 {
    "data": [
       {
-         "date": "2025-01-16",
+         "date": "2025-01-21",
          "events": [
             {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 18:38:00",
-               "end_time": "2025-01-16 18:38:22.643867"
+               "file_name": "content-scheduler/uploaded_videos/rsystems2crop.mp4",
+               "start_time": "2025-01-21 14:30:00",
+               "end_time": "2025-01-21 14:30:00"
             },
             {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 18:41:00",
-               "end_time": "2025-01-16 18:41:22.643867"
-            },
-            {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 18:44:00",
-               "end_time": "2025-01-16 18:44:22.633333"
-            },
-            {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 18:47:00",
-               "end_time": "2025-01-16 18:47:22.633333"
-            },
-            {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 18:50:00",
-               "end_time": "2025-01-16 18:50:22.633333"
-            },
-            {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 18:53:00",
-               "end_time": "2025-01-16 18:53:22.633333"
-            },
-            {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 18:56:00",
-               "end_time": "2025-01-16 18:56:22.633333"
-            },
-            {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 18:59:00",
-               "end_time": "2025-01-16 18:59:22.633333"
-            },
-            {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 19:02:00",
-               "end_time": "2025-01-16 19:02:22.633333"
-            },
-            {
-               "file_name": "example_video.mp4",
-               "start_time": "2025-01-16 19:05:00",
-               "end_time": "2025-01-16 19:05:22.633333"
+               "file_name": "content-scheduler/uploaded_videos/rsystems2crop.mp4",
+               "start_time": "2025-01-21 19:30:00",
+               "end_time": "2025-01-21 19:30:00.000167"
             }
          ],
-         "id": 100572834852061002
+         "id": 290627937010260780
+      },
+      {
+         "date": "2025-01-22",
+         "events": [
+            {
+               "file_name": "content-scheduler/uploaded_videos/rsystems1crop.mp4",
+               "start_time": "2025-01-22 13:00:00",
+               "end_time": "2025-01-22 13:00:00"
+            },
+            {
+               "file_name": "content-scheduler/uploaded_videos/rsystems1crop.mp4",
+               "start_time": "2025-01-22 16:00:00",
+               "end_time": "2025-01-22 16:00:00.005800"
+            }
+         ],
+         "id": 337886820296802953
+      },
+      {
+         "date": "2025-01-20",
+         "events": [
+            {
+               "file_name": "content-scheduler/uploaded_videos/rsystems1crop.mp4",
+               "start_time": "2025-01-20 19:20:00",
+               "end_time": "2025-01-20 19:20:20.920900"
+            },
+            {
+               "file_name": "content-scheduler/uploaded_videos/rsystems2crop.mp4",
+               "start_time": "2025-01-20 17:27:16.795000",
+               "end_time": "2025-01-20 17:27:16.795000"
+            },
+            {
+               "file_name": "content-scheduler/uploaded_videos/rsystems2crop.mp4",
+               "start_time": "2025-01-20 18:27:16.795000",
+               "end_time": "2025-01-20 18:27:16.795000"
+            }
+         ],
+         "id": 155910881694945065
       }
    ]
 }

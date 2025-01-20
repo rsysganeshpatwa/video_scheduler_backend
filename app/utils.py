@@ -4,7 +4,7 @@ from datetime import datetime
 from .databases import schedule_db
 import boto3
 import ffmpeg
-from .config import s3_client, BUCKET_NAME, BLANK_VIDEO_PATH, EVENT_FILE_DIR, OUTPUT_VIDEO_DIR,OUTPUT_VIDEO_DIR_FFMPEG
+from .config import s3_client, BUCKET_NAME, EVENT_FILE_DIR, OUTPUT_VIDEO_DIR,OUTPUT_VIDEO_DIR_FFMPEG
 import subprocess
 from .databases import metadata_db
 import pytz
@@ -13,6 +13,7 @@ LOCAL_TIMEZONE = pytz.timezone('Asia/Kolkata')  # Replace with your desired time
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+BLANK_VIDEO_PATH= f"https://{BUCKET_NAME}.s3.amazonaws.com/no_content.mp4"
 
 def generate_presigned_url_func(file_name):
     return s3_client.generate_presigned_url(
@@ -106,75 +107,7 @@ def start_stream(date):
 
         logger.info(f"Starting FFmpeg stream for date: {date}")
     
-        if not os.path.exists(event_file_path):
-            print(f"Event file not found for date {date}")
-            return
-
-        # Clear the output folder before starting the new stream
-        if os.path.exists(OUTPUT_VIDEO_DIR_FFMPEG):
-            for filename in os.listdir(OUTPUT_VIDEO_DIR_FFMPEG):
-                file_path = os.path.join(OUTPUT_VIDEO_DIR_FFMPEG, filename)
-                try:
-                    if os.path.isfile(file_path):
-                        os.remove(file_path)
-                        print(f"Deleted existing file: {file_path}")
-                except Exception as e:
-                    print(f"Error deleting file {file_path}: {e}")
-        else:
-            print(f"Output directory {OUTPUT_VIDEO_DIR_FFMPEG} does not exist.")
-
-        
-        print(f"Starting FFmpeg stream for {date}")
-
-        # # FFmpeg command to start the stream
-        # command = [
-        #     'ffmpeg',
-        #     "-protocol_whitelist", "file,crypto,data,https,tls,tcp",
-        #     '-f', 'concat',           # Concatenate video files
-        #     '-safe', '0',             # Allow unsafe file paths
-        #     '-i', event_file_path,    # Input event file
-        #     '-c:v', 'libx264',        # Video codec
-        #     '-preset', 'fast',        # Preset for encoding speed/quality trade-off
-        #     '-f', 'hls',              # Output format (HTTP Live Streaming)
-        #     f'{OUTPUT_VIDEO_DIR_FFMPEG}/{date}_stream.m3u8'  # Output file
-        # ]
-            # Define the ffmpeg command and arguments
-        command = [
-                "ffmpeg",
-                "-protocol_whitelist", "file,crypto,data,https,tls,tcp",
-                "-re",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", event_file_path,
-                "-filter_complex", "[0:v]split=1[v1]; [v1]scale=w=854:h=480[v1out]",
-                "-map", "[v1out]",
-                "-c:v:0", "libx264",
-                "-b:v:0", "5000k",
-                "-maxrate:v:0", "5350k",
-                "-bufsize:v:0", "7500k",
-                "-map", "a:0",
-                "-c:a", "aac",
-                "-b:a:0", "192k",
-                "-ac", "2",
-                "-f", "hls",
-                "-hls_time", "5",
-                "-hls_playlist_type", "event",
-                "-hls_flags", "independent_segments",
-                "-hls_segment_type", "mpegts",
-                "-hls_segment_filename", f"{OUTPUT_VIDEO_DIR_FFMPEG}/data%03d.ts",
-                "-master_pl_name", "master.m3u8",
-                "-var_stream_map", "v:0,a:0",
-                f'{OUTPUT_VIDEO_DIR_FFMPEG}/{date}_stream.m3u8'
-            ]
-        
-        # Run the FFmpeg command
-        result = subprocess.run(command, capture_output=True, text=True)
-         # Check if the command was successful
-        logger.info(result.stderr)  # FFmpeg logs will show which file is being processed
-        if result.returncode == 0:
-            logger.info("FFmpeg stream started successfully")
-        else:
-            logger.error(f"FFmpeg failed with error: {result.stderr}")
+     
     except Exception as e:
         print(f"Error starting FFmpeg stream: {e}")
 

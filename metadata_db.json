@@ -11,6 +11,12 @@
          "bucket_name": "tvunativeoverlay",
          "duration": 20.9209,
          "id": 163665113874403696
+      },
+      {
+         "file_name": "content-scheduler/uploaded_videos/no_content.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 1.001,
+         "id": 223491172838061470
       }
    ]
 }
