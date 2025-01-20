@@ -1,110 +1,235 @@
+import boto3
 import os
-from datetime import datetime
-import pytz
-from app.config import BUCKET_NAME, BLANK_VIDEO_PATH, EVENT_FILE_DIR
+import time
+import subprocess
+from pathlib import Path
+import threading
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
-class MockDatabase:
-    def __init__(self):
-        self.data = {
-            '2025-01-15': {
-                'events': [
-                    {'start_time': '2025-01-15T10:00:00', 'end_time': '2025-01-15T11:00:00', 'file_name': 'event1.mp4'},
-                    {'start_time': '2025-01-15T13:00:00', 'end_time': '2025-01-15T14:00:00', 'file_name': 'event2.mp4'},
-                    {'start_time': '2025-01-15T22:30:00', 'end_time': '2025-01-15T22:00:00', 'file_name': 'event3.mp4'}
-                ]
-            }
-        }
+# S3 setup
+s3_client = boto3.client('s3')
+BUCKET_NAME = 'logo-detection-bucket'
+#BUCKET_NAME = 'tvunativeoverlay'
+HLS_FOLDER = 'hls/'
 
-    def getByQuery(self, query):
-        # This is a simplified mock query, which returns the events for a given date
-        date = query.get("date")
-        if date in self.data:
-            return [{ 'date': date, 'events': self.data[date]['events'] }]
-        return []
+# Path to the temporary directory for .ts files
+TEMP_DIR = 'output_videos'
 
-# Create an instance of the mock database
-schedule_db = MockDatabase()
+# def generate_asset_file(file_path, lines_to_generate=3000):
+#     with open(file_path, 'w') as f:
+#         for i in range(1, lines_to_generate + 1):
+#             if i % 30 == 0:
+#                 # Update with S3 video on every 10th line
+#                 f.write(f"file 'https://logo-detection-bucket.s3.amazonaws.com/example_video.mp4'\n")
+#             else:
+#                  # Use local video for the other lines
+#                  f.write(f"file 'blank_video/text_video.mp4'\n")
+def generate_asset_file(file_path, lines_to_generate=3000):
+    with open(file_path, 'w') as f:
+        for i in range(1, lines_to_generate + 1):
+            if i % 10 == 0:
+                # Update with S3 video on every 10th line
+                #f.write(f"file 'https://tvunativeoverlay.s3.ap-south-1.amazonaws.com/asset.mp4'\n")
+                f.write(f"file 'https://logo-detection-bucket.s3.amazonaws.com/example_video.mp4'\n")
+            else:
+                # Use local video for the other lines
+                f.write(f"file 'blank_video/text_video.mp4'\n")
+    
+    print(f"Generated {file_path} with {lines_to_generate} lines.")
 
-
-# Assuming you want to work with your local server time or a specific timezone
-LOCAL_TIMEZONE = pytz.timezone('Asia/Kolkata')  # Replace with your desired timezone
-
-def generate_event_file(date):
+# Clear the S3 HLS folder before uploading new files
+def clear_s3_folder():
+    """Clear all objects in the S3 HLS folder before uploading new files."""
     try:
-        # Fetch schedule for the given date
-        schedule = schedule_db.getByQuery({"date": date})
-        events = schedule[0]['events'] if schedule else []
-
-        lines = []
-        line_number = 1  # Initialize line number
-
-        # Get the current time in the specified timezone and format
-        now = datetime.now(LOCAL_TIMEZONE)
-        current_time_24hr = now.strftime('%Y-%m-%d %H:%M:%S')
-        current_time = datetime.strptime(current_time_24hr, '%Y-%m-%d %H:%M:%S')
-        current_time = LOCAL_TIMEZONE.localize(current_time)
-        print(f"Current Time: {current_time}")
-
-        for event in sorted(events, key=lambda e: e['start_time']):
-            start_time = datetime.fromisoformat(event['start_time'])
-            end_time = datetime.fromisoformat(event['end_time'])
-
-            # Localize event times to the same timezone
-            start_time = LOCAL_TIMEZONE.localize(start_time)
-            end_time = LOCAL_TIMEZONE.localize(end_time)
-
-            # Skip event if it's already in the past
-            if start_time < current_time:
-                print(f"Skipping event {event['file_name']} as it is in the past ({start_time})")
-                continue  # Skip the event if its start time is in the past
-
-            # Fill gap with blank videos if current time is before the event's start time
-            if current_time < start_time:
-                gap_duration = (start_time - current_time).total_seconds()
-                full_blanks = int(gap_duration // 1)  # Number of 1-second blanks
-
-                # Append full blank video repetitions
-                for _ in range(full_blanks):
-                    lines.append(f"file '{BLANK_VIDEO_PATH}'")
-                    lines.append("duration 1")
-                    line_number += 2  # Each blank video adds 2 lines (file + duration)
-
-            # Append the event video
-            file_path = f"https://{BUCKET_NAME}.s3.amazonaws.com/{event['file_name']}"
-            lines.append(f"file '{file_path}'")
-            duration = (end_time - start_time).total_seconds()
-            lines.append(f"duration {duration}")
-
-            print(f"Added event video: {file_path} at line {line_number}, current time: {current_time}")
-            line_number += 2  # Event video adds 2 lines (file + duration)
-
-            # Update current time to the end of the event
-            current_time = end_time
-
-        # Fill remaining time to the end of the day (23:59:59) with blank videos
-        end_of_day = datetime.combine(datetime.fromisoformat(date), datetime.max.time())
-        end_of_day = LOCAL_TIMEZONE.localize(end_of_day)
-        print(f"End of Day: {end_of_day}")
-
-        if current_time < end_of_day:
-            remaining_duration = (end_of_day - current_time).total_seconds()
-            full_blanks = int(remaining_duration // 1)
-
-            # Append full blank video repetitions
-            for _ in range(full_blanks):
-                lines.append(f"file '{BLANK_VIDEO_PATH}'")
-                lines.append("duration 1")
-                line_number += 2  # Each blank video adds 2 lines (file + duration)
-
-        # Write the event file
-        event_file_path = os.path.join(EVENT_FILE_DIR, f"{date}.txt")
-        with open(event_file_path, 'w') as f:
-            f.write('\n'.join(lines))
-
-        print(f"Event file generated successfully: {event_file_path}")
+        # List all objects in the HLS folder
+        response = s3_client.list_objects_v2(Bucket=BUCKET_NAME, Prefix=HLS_FOLDER)
+        if 'Contents' in response:
+            # Extract the keys of the objects to delete
+            objects_to_delete = [{'Key': obj['Key']} for obj in response['Contents']]
+            # Delete all objects in the folder
+            s3_client.delete_objects(Bucket=BUCKET_NAME, Delete={'Objects': objects_to_delete})
+            print(f"Cleared S3 folder {HLS_FOLDER}.")
+        else:
+            print(f"S3 folder {HLS_FOLDER} is already empty.")
     except Exception as e:
-        print(f"Error generating event file: {e}")
+        print(f"Error clearing S3 folder {HLS_FOLDER}: {e}")
 
 
-# Test the function
-generate_event_file('2025-01-15')
+def clear_output_folder():
+    """Clear the temporary output folder."""
+    try:
+        for file in os.listdir(TEMP_DIR):
+            file_path = os.path.join(TEMP_DIR, file)
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+        print(f"Cleared local folder {TEMP_DIR}.")
+    except Exception as e:
+        print(f"Error clearing local folder {TEMP_DIR}: {e}")
+
+
+
+
+# FFmpeg Command
+def run_ffmpeg(event_file_path, date):
+    """Run the ffmpeg command to generate HLS segments and playlist."""
+    # Create directories for segments and playlists if they don't exist
+    os.makedirs(TEMP_DIR, exist_ok=True)
+
+    # FFmpeg command to generate HLS
+    ffmpeg_command = [
+        'ffmpeg', 
+        '-protocol_whitelist', 'file,crypto,data,https,tls,tcp',
+         '-re', 
+        '-f', 'concat', '-safe', '0', 
+        '-i', event_file_path,
+           "-c:v", "libx264", 
+           '-bufsize:v:0', '3500k',
+            "-b:v", "1500k", 
+            "-c:a", "aac", 
+            "-b:a", "128k", 
+            "-f", "hls", 
+            "-hls_time", "6", 
+            "-hls_playlist_type", "event", 
+        '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),
+        '-master_pl_name', 'master.m3u8', 
+          os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')
+    ]
+    try:
+        print(f"Running FFmpeg for {date}...")
+        subprocess.run(ffmpeg_command, check=True)
+        print(f"FFmpeg completed successfully for {date}")
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing FFmpeg command: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+# Helper function to check if a file is still being written
+def is_file_written(file_path):
+    """Check if the file is still being written (modified in the last few seconds)."""
+    try:
+        current_mod_time = os.path.getmtime(file_path)
+        time.sleep(2)  # Sleep for 2 seconds to check if it's still being written
+        new_mod_time = os.path.getmtime(file_path)
+        return current_mod_time != new_mod_time  # True if file was modified in this time window
+    except FileNotFoundError:
+        return False
+
+# # Real-time file upload handler
+# class FileUploadHandler(FileSystemEventHandler):
+#     def on_created(self, event):
+#         """Upload new .ts files and .m3u8 playlist to S3 as they are created."""
+#         print(f"New file created: {event.src_path}")
+#         if event.src_path.endswith('.ts'):
+#             # Upload .ts segments
+#             self.upload_file(event.src_path, '.ts')
+        
+#         elif event.src_path.endswith('.m3u8'):
+#             # Ensure playlist is uploaded, even if it's not fully written
+#             if event.src_path.endswith('.tmp'):
+#                 print(f"Skipping .tmp file: {event.src_path}")
+#                 return
+#             self.upload_file(event.src_path, '.m3u8')
+#         elif event.src_path.endswith('.tmp'):
+#              self.upload_file(event.src_path.split('.tmp')[0], '.tmp')
+            
+#     def upload_file(self, src_path, file_type):
+#         """Uploads a file to S3."""
+#         try:
+#             # Generate S3 key for the file
+#             s3_key = HLS_FOLDER + Path(src_path).name
+#             s3_client.upload_file(src_path, BUCKET_NAME, s3_key)
+#             print(f"Uploaded {file_type} file: {src_path} to s3://{BUCKET_NAME}/{s3_key}")
+#         except Exception as e:
+#             print(f"Error uploading {file_type} to S3: {e}")
+
+#     def on_modified(self, event):
+#         """Re-upload the master.m3u8 file if modified."""
+#         if event.src_path.endswith('.m3u8'):
+#             if not is_file_written(event.src_path):
+#                 s3_playlist_key = HLS_FOLDER + Path(event.src_path).name
+#                 try:
+#                     s3_client.upload_file(event.src_path, BUCKET_NAME, s3_playlist_key)
+#                     print(f"Re-uploaded master.m3u8: {event.src_path} to s3://{BUCKET_NAME}/{s3_playlist_key}")
+#                 except Exception as e:
+#                     print(f"Error re-uploading master.m3u8 to S3: {e}")
+
+class FileUploadHandler(FileSystemEventHandler):
+    
+    def on_moved(self, event):
+        print(f'event type: {event.event_type}  path : {event.src_path}')
+        if event.src_path.endswith('.tmp'):
+            self.upload_file(event.src_path.split('.tmp')[0], '.m3u8')
+
+    def on_closed(self, event):
+        print(f'event type: {event.event_type}  path : {event.src_path}')
+        """Upload new .ts files and .m3u8 playlist to S3 as they are created."""
+        print(f"New file created: {event.src_path}")
+        if event.src_path.endswith('.ts'):
+            # Upload .ts segments
+            self.upload_file(event.src_path, '.ts')
+        
+        elif event.src_path.endswith('.m3u8'):
+            # Ensure playlist is uploaded, even if it's not fully written
+            if event.src_path.endswith('.tmp'):
+                print(f"Skipping .tmp file: {event.src_path}")
+                return
+            self.upload_file(event.src_path, '.m3u8')
+            
+    def upload_file(self, src_path, file_type):
+        """Uploads a file to S3."""
+        try:
+            # Generate S3 key for the file
+            s3_key = HLS_FOLDER + Path(src_path).name
+            s3_client.upload_file(src_path, BUCKET_NAME, s3_key)
+            print(f"Uploaded {file_type} file: {src_path} to s3://{BUCKET_NAME}/{s3_key}")
+        except Exception as e:
+            print(f"Error uploading {file_type} to S3: {e}")
+
+
+def start_file_monitoring():
+    """Start monitoring the temporary directory for new .ts and .m3u8 files."""
+    event_handler = FileUploadHandler()
+    observer = Observer()
+    observer.schedule(event_handler, TEMP_DIR, recursive=False)
+    observer.start()
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+
+# Function to start the file monitoring in a separate thread
+def start_monitoring_thread():
+    monitoring_thread = threading.Thread(target=start_file_monitoring)
+    monitoring_thread.daemon = True  # Ensure the thread exits when the main program exits
+    monitoring_thread.start()
+
+# Function to run the ffmpeg command in the main thread
+def start_ffmpeg(eventfile, date):
+    run_ffmpeg(eventfile, date)
+
+
+
+eventfile = 'event_files/2025-01-16.txt'
+date = '2025-01-16'
+generate_asset_file(eventfile,3000)
+
+# Start the monitoring thread
+start_monitoring_thread()
+
+# Clear S3 folder (delete old files)
+clear_s3_folder()
+
+# Clear local output folder
+clear_output_folder()
+
+# Event file to process
+
+
+# Run ffmpeg to generate the video segments and playlist (main thread)
+start_ffmpeg(eventfile, date)
+
+# The script will continue running, allowing the monitoring thread to watch the directory

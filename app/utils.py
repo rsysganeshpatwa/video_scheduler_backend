@@ -60,14 +60,14 @@ def generate_event_file(date):
                 # Append full blank video repetitions
                 for _ in range(full_blanks):
                     lines.append(f"file '{BLANK_VIDEO_PATH}'")
-                    lines.append("duration 1")
+                  #  lines.append("duration 1")
                     line_number += 2  # Each blank video adds 2 lines (file + duration)
 
             # Append the event video
             file_path = f"https://{BUCKET_NAME}.s3.amazonaws.com/{event['file_name']}"
             lines.append(f"file '{file_path}'")
-            duration = (end_time - start_time).total_seconds()
-            lines.append(f"duration {duration}")
+#            duration = (end_time - start_time).total_seconds()
+ #           lines.append(f"duration {duration}")
 
             print(f"Added event video: {file_path} at line {line_number}, current time: {current_time}")
             line_number += 2  # Event video adds 2 lines (file + duration)
@@ -87,7 +87,7 @@ def generate_event_file(date):
             # Append full blank video repetitions
             for _ in range(full_blanks):
                 lines.append(f"file '{BLANK_VIDEO_PATH}'")
-                lines.append("duration 1")
+  #              lines.append("duration 1")
                 line_number += 2  # Each blank video adds 2 lines (file + duration)
 
         # Write the event file
@@ -126,18 +126,46 @@ def start_stream(date):
         
         print(f"Starting FFmpeg stream for {date}")
 
-        # FFmpeg command to start the stream
+        # # FFmpeg command to start the stream
+        # command = [
+        #     'ffmpeg',
+        #     "-protocol_whitelist", "file,crypto,data,https,tls,tcp",
+        #     '-f', 'concat',           # Concatenate video files
+        #     '-safe', '0',             # Allow unsafe file paths
+        #     '-i', event_file_path,    # Input event file
+        #     '-c:v', 'libx264',        # Video codec
+        #     '-preset', 'fast',        # Preset for encoding speed/quality trade-off
+        #     '-f', 'hls',              # Output format (HTTP Live Streaming)
+        #     f'{OUTPUT_VIDEO_DIR_FFMPEG}/{date}_stream.m3u8'  # Output file
+        # ]
+            # Define the ffmpeg command and arguments
         command = [
-            'ffmpeg',
-            "-protocol_whitelist", "file,crypto,data,https,tls,tcp",
-            '-f', 'concat',           # Concatenate video files
-            '-safe', '0',             # Allow unsafe file paths
-            '-i', event_file_path,    # Input event file
-            '-c:v', 'libx264',        # Video codec
-            '-preset', 'fast',        # Preset for encoding speed/quality trade-off
-            '-f', 'hls',              # Output format (HTTP Live Streaming)
-            f'{OUTPUT_VIDEO_DIR_FFMPEG}/{date}_stream.m3u8'  # Output file
-        ]
+                "ffmpeg",
+                "-protocol_whitelist", "file,crypto,data,https,tls,tcp",
+                "-re",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", event_file_path,
+                "-filter_complex", "[0:v]split=1[v1]; [v1]scale=w=854:h=480[v1out]",
+                "-map", "[v1out]",
+                "-c:v:0", "libx264",
+                "-b:v:0", "5000k",
+                "-maxrate:v:0", "5350k",
+                "-bufsize:v:0", "7500k",
+                "-map", "a:0",
+                "-c:a", "aac",
+                "-b:a:0", "192k",
+                "-ac", "2",
+                "-f", "hls",
+                "-hls_time", "5",
+                "-hls_playlist_type", "event",
+                "-hls_flags", "independent_segments",
+                "-hls_segment_type", "mpegts",
+                "-hls_segment_filename", f"{OUTPUT_VIDEO_DIR_FFMPEG}/data%03d.ts",
+                "-master_pl_name", "master.m3u8",
+                "-var_stream_map", "v:0,a:0",
+                f'{OUTPUT_VIDEO_DIR_FFMPEG}/{date}_stream.m3u8'
+            ]
         
         # Run the FFmpeg command
         result = subprocess.run(command, capture_output=True, text=True)
@@ -163,7 +191,7 @@ def get_video_duration_from_s3(bucket_name, object_key):
         # Use ffmpeg to probe the video stream directly from the S3 URL
         print(f"Probing video at URL: {url}")
         probe = ffmpeg.probe(url, v='error', select_streams='v:0', show_entries='stream=duration')
-        print(f"Probe result: {probe}")
+    
 
         # Extract the duration in seconds
         duration = float(probe['streams'][0]['duration'])

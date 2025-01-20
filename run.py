@@ -1,8 +1,10 @@
 from app import create_app
 from app.config import EVENT_FILE_DIR, OUTPUT_VIDEO_DIR
 import os
+from flask_cors import CORS
 
 app = create_app()
+CORS(app)
 
 # Ensure event files directory exists
 os.makedirs(EVENT_FILE_DIR, exist_ok=True)

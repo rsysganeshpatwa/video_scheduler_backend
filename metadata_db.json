@@ -1,10 +1,16 @@
 {
    "data": [
       {
-         "file_name": "example_video.mp4",
-         "bucket_name": "logo-detection-bucket",
-         "duration": 3600,
-         "id": 489722758435532915
+         "file_name": "content-scheduler/uploaded_videos/rsystems2crop.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 38.6386,
+         "id": 297771264374782660
+      },
+      {
+         "file_name": "content-scheduler/uploaded_videos/rsystems1crop.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 20.9209,
+         "id": 163665113874403696
       }
    ]
 }

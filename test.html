@@ -1,0 +1,37 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HLS Stream Example</title>
+</head>
+<body>
+  <h1>HLS Stream Player</h1>
+  <video id="videoPlayer" controls autoplay width="640" height="360"></video>
+
+  <!-- Include HLS.js -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script>
+    const video = document.getElementById('videoPlayer');
+    const hlsUrl = 'https://tvunativeoverlay.s3.ap-south-1.amazonaws.com/hls/master.m3u8';
+
+    if (Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play();
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // For Safari or other browsers with native HLS support
+      video.src = hlsUrl;
+      video.addEventListener('loadedmetadata', () => {
+        video.play();
+      });
+    } else {
+      console.error('HLS is not supported in this browser.');
+    }
+  </script>
+</body>
+</html>

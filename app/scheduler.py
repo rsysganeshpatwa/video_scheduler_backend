@@ -38,10 +38,10 @@ def initialize_scheduler(app):
         scheduler.start()
         print("Scheduler started")
 
-        # Graceful shutdown of scheduler
-        @app.teardown_appcontext
-        def shutdown_scheduler(exception=None):
-            scheduler.shutdown()
+        # # Graceful shutdown of scheduler
+        # @app.teardown_appcontext
+        # def shutdown_scheduler(exception=None):
+        #     scheduler.shutdown()
 
     # Start the scheduler in a separate thread
     
