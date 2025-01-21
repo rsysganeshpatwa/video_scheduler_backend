@@ -13,10 +13,46 @@
          "id": 163665113874403696
       },
       {
+         "file_name": "content-scheduler/uploaded_videos/welcome_clip.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 10.01,
+         "id": 345408799605813783
+      },
+      {
+         "file_name": "content-scheduler/uploaded_videos/blank_clip.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 10.866536,
+         "id": 951413437437378936
+      },
+      {
+         "file_name": "content-scheduler/uploaded_videos/output_clip.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 10.9,
+         "id": 335058188625024079
+      },
+      {
          "file_name": "content-scheduler/uploaded_videos/no_content.mp4",
          "bucket_name": "tvunativeoverlay",
          "duration": 1.001,
-         "id": 223491172838061470
+         "id": 950993301576411826
+      },
+      {
+         "file_name": "content-scheduler/uploaded_videos/output_processed.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 10.9,
+         "id": 536358256941558903
+      },
+      {
+         "file_name": "content-scheduler/uploaded_videos/WelcomeRsystem.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 10.0,
+         "id": 152503272240320297
+      },
+      {
+         "file_name": "content-scheduler/uploaded_videos/WelcomeRsystem_with_audio.mp4",
+         "bucket_name": "tvunativeoverlay",
+         "duration": 10.0,
+         "id": 171064111531408919
       }
    ]
 }

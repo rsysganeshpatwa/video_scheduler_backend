@@ -6,6 +6,13 @@ from pathlib import Path
 import threading
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from pysondb import db
+from datetime import datetime
+import pytz
+
+LOCAL_TIMEZONE = pytz.timezone('Asia/Kolkata') 
+schedule_db = db.getDb("schedule_db.json")
+BLANK_VIDEO_PATH= f"https://tvunativeoverlay.s3.ap-south-1.amazonaws.com/concontent-scheduler/uploaded_videos/rsystems1crop.mp4"
 
 # S3 setup
 s3_client = boto3.client('s3')
@@ -14,6 +21,81 @@ HLS_FOLDER = 'hls/'
 
 # Path to the temporary directory for .ts files
 TEMP_DIR = 'output_videos'
+def generate_event_file(date,event_file_dir='event_files'):
+    try:
+        # Fetch schedule for the given date
+        schedule = schedule_db.getByQuery({"date": date})
+        events = schedule[0]['events'] if schedule else []
+
+        lines = []
+        line_number = 1  # Initialize line number
+
+        # Get the current time in the specified timezone and format
+        now = datetime.now(LOCAL_TIMEZONE)
+        current_time_24hr = now.strftime('%Y-%m-%d %H:%M:%S')
+        current_time = datetime.strptime(current_time_24hr, '%Y-%m-%d %H:%M:%S')
+        current_time = LOCAL_TIMEZONE.localize(current_time)
+        print(f"Current Time: {current_time}")
+
+        for event in sorted(events, key=lambda e: e['start_time']):
+            start_time = datetime.fromisoformat(event['start_time'])
+            end_time = datetime.fromisoformat(event['end_time'])
+
+            # Localize event times to the same timezone
+            start_time = LOCAL_TIMEZONE.localize(start_time)
+            end_time = LOCAL_TIMEZONE.localize(end_time)
+
+            # Skip event if it's already in the past
+            if start_time < current_time:
+                print(f"Skipping event {event['file_name']} as it is in the past ({start_time})")
+                continue  # Skip the event if its start time is in the past
+
+            # Fill gap with blank videos if current time is before the event's start time
+            if current_time < start_time:
+                gap_duration = (start_time - current_time).total_seconds()
+                full_blanks = int(gap_duration // 20)  # Number of 1-second blanks
+
+                # Append full blank video repetitions
+                for _ in range(full_blanks):
+                    lines.append(f"file '{BLANK_VIDEO_PATH}'")
+                  #  lines.append("duration 1")
+                    line_number += 2  # Each blank video adds 2 lines (file + duration)
+
+            # Append the event video
+            file_path = f"https://{BUCKET_NAME}.s3.amazonaws.com/{event['file_name']}"
+            lines.append(f"file '{file_path}'")
+#            duration = (end_time - start_time).total_seconds()
+ #           lines.append(f"duration {duration}")
+
+            print(f"Added event video: {file_path} at line {line_number}, current time: {current_time}")
+            line_number += 2  # Event video adds 2 lines (file + duration)
+
+            # Update current time to the end of the event
+            current_time = end_time
+
+        # Fill remaining time to the end of the day (23:59:59) with blank videos
+        end_of_day = datetime.combine(datetime.fromisoformat(date), datetime.max.time())
+        end_of_day = LOCAL_TIMEZONE.localize(end_of_day)
+        print(f"End of Day: {end_of_day}")
+
+        if current_time < end_of_day:
+            remaining_duration = (end_of_day - current_time).total_seconds()
+            full_blanks = int(remaining_duration // 20)
+
+            # Append full blank video repetitions
+            for _ in range(full_blanks):
+                lines.append(f"file '{BLANK_VIDEO_PATH}'")
+  #              lines.append("duration 1")
+                line_number += 2  # Each blank video adds 2 lines (file + duration)
+
+        # Write the event file
+        event_file_path = os.path.join(event_file_dir, f"{date}.txt")
+        with open(event_file_path, 'w') as f:
+            f.write('\n'.join(lines))
+
+        print(f"Event file generated successfully: {event_file_dir}")
+    except Exception as e:
+        print(f"Error generating event file: {e}")
 
 def generate_asset_file(file_path, lines_to_generate=1000):
     with open(file_path, 'w') as f:
@@ -61,15 +143,46 @@ def clear_output_folder():
 def run_ffmpeg(event_file_path, date):
     """Run the ffmpeg command to generate HLS segments and playlist."""
     # FFmpeg command to generate HLS
+    # ffmpeg_command = [
+    #     'ffmpeg', '-protocol_whitelist', 'file,crypto,data,https,tls,tcp', '-re', '-f', 'concat', '-safe', '0', '-i', event_file_path,
+    #     '-filter_complex', '[0:v]split=1[v1]; [v1]scale=w=854:h=480[v1out]',
+    #     '-map', '[v1out]', '-c:v:0', 'libx264', '-b:v:0', '5000k', '-maxrate:v:0', '5350k',
+    #     '-bufsize:v:0', '7500k', '-map', 'a:0', '-c:a', 'aac', '-b:a:0', '192k', '-ac', '2',
+    #     '-f', 'hls', '-hls_time', '6', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments',
+    #     '-hls_segment_type', 'mpegts', '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),
+    #     '-master_pl_name', 'master.m3u8', '-var_stream_map', 'v:0,a:0', os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')
+    # ]
+    
     ffmpeg_command = [
-        'ffmpeg', '-protocol_whitelist', 'file,crypto,data,https,tls,tcp', '-re', '-f', 'concat', '-safe', '0', '-i', event_file_path,
-        '-filter_complex', '[0:v]split=1[v1]; [v1]scale=w=854:h=480[v1out]',
-        '-map', '[v1out]', '-c:v:0', 'libx264', '-b:v:0', '5000k', '-maxrate:v:0', '5350k',
-        '-bufsize:v:0', '7500k', '-map', 'a:0', '-c:a', 'aac', '-b:a:0', '192k', '-ac', '2',
-        '-f', 'hls', '-hls_time', '6', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments',
-        '-hls_segment_type', 'mpegts', '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),
-        '-master_pl_name', 'master.m3u8', '-var_stream_map', 'v:0,a:0', os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')
-    ]
+    'ffmpeg',
+    '-protocol_whitelist', 'file,crypto,data,https,tls,tcp',  # Allow necessary protocols
+    '-re',  # Read input in real-time
+    '-f', 'concat',  # Input is a concatenation file
+    '-safe', '0',  # Allow unsafe file paths in the input file
+    '-i', event_file_path,  # Input file
+
+# Video processing
+    '-vf', 'scale=w=854:h=480',
+    '-c:v', 'libx264',
+    '-b:v', '5000k',
+    '-maxrate', '5350k',
+    '-bufsize', '3500k',
+
+    # Re-encode audio
+    '-map', '0:v',
+    '-map', '0:a?',
+    '-c:a', 'aac',  # Re-encode audio
+    '-b:a', '192k',
+    '-ac', '2',
+    # HLS output settings
+    '-f', 'hls',  # Output format is HLS
+    '-hls_time', '6',  # Segment duration in seconds
+    '-hls_playlist_type', 'event',  # Event-based HLS
+    '-hls_flags', 'independent_segments',  # Ensure independent decodable segments
+    '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),  # Segment file naming
+    os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')  # HLS playlist file
+]
+
     try:
         print(f"Running FFmpeg for {date}...")
         subprocess.run(ffmpeg_command, check=True)
@@ -147,9 +260,11 @@ def start_ffmpeg(eventfile, date):
 def main():
    #Create directories for segments and playlists if they don't exist
     os.makedirs(TEMP_DIR, exist_ok=True)
-    eventfile = '2025-01-20.txt'
-    date = '2025-01-20'
-    generate_asset_file(eventfile,3000)
+    eventfile = 'event_files/2025-01-21.txt'
+    date = '2025-01-21'
+    #generate_asset_file(eventfile,3000)
+    #generate_event_file(date)
+    
     # Start the monitoring thread
     monitoring_thread = threading.Thread(target=start_file_monitoring)
     monitoring_thread.daemon = False  # Ensure the thread exits when the main program exits

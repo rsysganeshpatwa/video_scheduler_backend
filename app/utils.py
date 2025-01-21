@@ -4,7 +4,7 @@ from datetime import datetime
 from .databases import schedule_db
 import boto3
 import ffmpeg
-from .config import s3_client, BUCKET_NAME, EVENT_FILE_DIR, OUTPUT_VIDEO_DIR,OUTPUT_VIDEO_DIR_FFMPEG
+from .config import s3_client, BUCKET_NAME, EVENT_FILE_DIR, OUTPUT_VIDEO_DIR,OUTPUT_VIDEO_DIR_FFMPEG,upload_video_folder
 import subprocess
 from .databases import metadata_db
 import pytz
@@ -13,7 +13,7 @@ LOCAL_TIMEZONE = pytz.timezone('Asia/Kolkata')  # Replace with your desired time
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-BLANK_VIDEO_PATH= f"https://{BUCKET_NAME}.s3.amazonaws.com/no_content.mp4"
+BLANK_VIDEO_PATH= f"https://{BUCKET_NAME}.s3.ap-south-1.amazonaws.com/{upload_video_folder}/rsystems1crop.mp4"
 
 def generate_presigned_url_func(file_name):
     return s3_client.generate_presigned_url(
@@ -56,7 +56,7 @@ def generate_event_file(date):
             # Fill gap with blank videos if current time is before the event's start time
             if current_time < start_time:
                 gap_duration = (start_time - current_time).total_seconds()
-                full_blanks = int(gap_duration // 1)  # Number of 1-second blanks
+                full_blanks = int(gap_duration // 20)  # Number of 1-second blanks
 
                 # Append full blank video repetitions
                 for _ in range(full_blanks):
@@ -65,7 +65,7 @@ def generate_event_file(date):
                     line_number += 2  # Each blank video adds 2 lines (file + duration)
 
             # Append the event video
-            file_path = f"https://{BUCKET_NAME}.s3.amazonaws.com/{event['file_name']}"
+            file_path = f"https://{BUCKET_NAME}.s3.ap-south-1.amazonaws.com/{event['file_name']}"
             lines.append(f"file '{file_path}'")
 #            duration = (end_time - start_time).total_seconds()
  #           lines.append(f"duration {duration}")
@@ -83,7 +83,7 @@ def generate_event_file(date):
 
         if current_time < end_of_day:
             remaining_duration = (end_of_day - current_time).total_seconds()
-            full_blanks = int(remaining_duration // 1)
+            full_blanks = int(remaining_duration // 20)
 
             # Append full blank video repetitions
             for _ in range(full_blanks):

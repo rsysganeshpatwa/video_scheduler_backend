@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import boto3
-from app.config import EVENT_FILE_DIR
+
 
 # S3 setup
 s3_client = boto3.client('s3')
@@ -16,6 +16,7 @@ HLS_FOLDER = 'hls/'
 
 # Path to the temporary directory for .ts files
 TEMP_DIR = 'output_videos'
+EVENT_FILE_DIR = 'event_files'
 
 # Globals for process and thread management
 ffmpeg_process = None
@@ -25,25 +26,36 @@ stop_event = threading.Event()
 
 # File Monitoring Class
 class FileUploadHandler(FileSystemEventHandler):
+   
     def on_moved(self, event):
+        print(f'event type: {event.event_type}  path : {event.src_path}')
         if event.src_path.endswith('.tmp'):
             self.upload_file(event.src_path.split('.tmp')[0], '.m3u8')
 
     def on_closed(self, event):
+        print(f'event type: {event.event_type}  path : {event.src_path}')
+        """Upload new .ts files and .m3u8 playlist to S3 as they are created."""
+        print(f"New file created: {event.src_path}")
         if event.src_path.endswith('.ts'):
+            # Upload .ts segments
             self.upload_file(event.src_path, '.ts')
-        elif event.src_path.endswith('.m3u8') and not event.src_path.endswith('.tmp'):
+        
+        elif event.src_path.endswith('.m3u8'):
+            # Ensure playlist is uploaded, even if it's not fully written
+            if event.src_path.endswith('.tmp'):
+                print(f"Skipping .tmp file: {event.src_path}")
+                return
             self.upload_file(event.src_path, '.m3u8')
-
+            
     def upload_file(self, src_path, file_type):
+        """Uploads a file to S3."""
         try:
+            # Generate S3 key for the file
             s3_key = HLS_FOLDER + Path(src_path).name
             s3_client.upload_file(src_path, BUCKET_NAME, s3_key)
             print(f"Uploaded {file_type} file: {src_path} to s3://{BUCKET_NAME}/{s3_key}")
         except Exception as e:
             print(f"Error uploading {file_type} to S3: {e}")
-
-
 # Utility Functions
 def clear_s3_folder():
     try:
@@ -128,7 +140,7 @@ def run_ffmpeg(event_file, date):
         'ffmpeg', '-protocol_whitelist', 'file,crypto,data,https,tls,tcp', '-re', '-f', 'concat', '-safe', '0', '-i', event_file,
         '-filter_complex', '[0:v]split=1[v1]; [v1]scale=w=854:h=480[v1out]',
         '-map', '[v1out]', '-c:v:0', 'libx264', '-b:v:0', '5000k', '-maxrate:v:0', '5350k',
-        '-bufsize:v:0', '7500k', '-map', 'a:0', '-c:a', 'aac', '-b:a:0', '192k', '-ac', '2',
+        '-bufsize:v:0', '3500k', '-map', 'a:0', '-c:a', 'aac', '-b:a:0', '192k', '-ac', '2',
         '-f', 'hls', '-hls_time', '6', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments',
         '-hls_segment_type', 'mpegts', '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),
         '-master_pl_name', 'master.m3u8', '-var_stream_map', 'v:0,a:0', os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')
@@ -137,7 +149,7 @@ def run_ffmpeg(event_file, date):
     try:
         print(f"Starting FFmpeg for {date}...")
         ffmpeg_process = subprocess.Popen(ffmpeg_command)
-        ffmpeg_process.wait()
+        #ffmpeg_process.wait()
         print(f"FFmpeg process completed for {date}.")
     except Exception as e:
         print(f"Error in FFmpeg process: {e}")

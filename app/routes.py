@@ -130,8 +130,7 @@ def schedule_video():
                 # Update event file (optional based on your application logic)
                 generate_event_file(date_str)
                 # Start the stream if date is today
-                if date_str == datetime.now().date().isoformat():
-                    start_stream(date_str)
+               
 
         return jsonify({'message': message})
 
@@ -164,4 +163,15 @@ def fetch_scheduled_events():
         return schedule
     except Exception as e:
         print(f"Error fetching scheduled events: {e}")
-        return []   
+        return []  
+    
+
+@routes.route('/start-ffmpeg-stream', methods=['GET'])
+def start_ffmpeg_stream():
+    try:
+        currentDate = datetime.now().date().isoformat()
+        start_stream(currentDate)
+        return jsonify({'message': 'FFmpeg stream started successfully'}), 200
+    except Exception as e:
+        print(f"Error starting FFmpeg stream: {e}")
+        return None 
