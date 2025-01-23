@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
-from ..utils import generate_event_file, start_stream
+from ..utils import generate_event_file
 import os
+from app.stream_handler import start_stream
 
 EVENT_FILE_DIR = 'event_files/'
 
@@ -16,4 +17,5 @@ def daily_task():
     # Generate new event file and start stream
     generate_event_file(date)
     start_stream(date)
+    
     print(f"Daily task completed for date {date}")

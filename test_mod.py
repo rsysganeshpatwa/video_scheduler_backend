@@ -143,46 +143,16 @@ def clear_output_folder():
 def run_ffmpeg(event_file_path, date):
     """Run the ffmpeg command to generate HLS segments and playlist."""
     # FFmpeg command to generate HLS
-    # ffmpeg_command = [
-    #     'ffmpeg', '-protocol_whitelist', 'file,crypto,data,https,tls,tcp', '-re', '-f', 'concat', '-safe', '0', '-i', event_file_path,
-    #     '-filter_complex', '[0:v]split=1[v1]; [v1]scale=w=854:h=480[v1out]',
-    #     '-map', '[v1out]', '-c:v:0', 'libx264', '-b:v:0', '5000k', '-maxrate:v:0', '5350k',
-    #     '-bufsize:v:0', '7500k', '-map', 'a:0', '-c:a', 'aac', '-b:a:0', '192k', '-ac', '2',
-    #     '-f', 'hls', '-hls_time', '6', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments',
-    #     '-hls_segment_type', 'mpegts', '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),
-    #     '-master_pl_name', 'master.m3u8', '-var_stream_map', 'v:0,a:0', os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')
-    # ]
-    
     ffmpeg_command = [
-    'ffmpeg',
-    '-protocol_whitelist', 'file,crypto,data,https,tls,tcp',  # Allow necessary protocols
-    '-re',  # Read input in real-time
-    '-f', 'concat',  # Input is a concatenation file
-    '-safe', '0',  # Allow unsafe file paths in the input file
-    '-i', event_file_path,  # Input file
-
-# Video processing
-    '-vf', 'scale=w=854:h=480',
-    '-c:v', 'libx264',
-    '-b:v', '5000k',
-    '-maxrate', '5350k',
-    '-bufsize', '3500k',
-
-    # Re-encode audio
-    '-map', '0:v',
-    '-map', '0:a?',
-    '-c:a', 'aac',  # Re-encode audio
-    '-b:a', '192k',
-    '-ac', '2',
-    # HLS output settings
-    '-f', 'hls',  # Output format is HLS
-    '-hls_time', '6',  # Segment duration in seconds
-    '-hls_playlist_type', 'event',  # Event-based HLS
-    '-hls_flags', 'independent_segments',  # Ensure independent decodable segments
-    '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),  # Segment file naming
-    os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')  # HLS playlist file
-]
-
+        'ffmpeg', '-protocol_whitelist', 'file,crypto,data,https,tls,tcp', '-re', '-f', 'concat', '-safe', '0', '-i', event_file_path,
+        '-filter_complex', '[0:v]split=1[v1]; [v1]scale=w=854:h=480[v1out]',
+        '-map', '[v1out]', '-c:v:0', 'libx264', '-b:v:0', '5000k', '-maxrate:v:0', '5350k',
+        '-bufsize:v:0', '7500k', '-map', 'a:0', '-c:a', 'aac', '-b:a:0', '192k', '-ac', '2',
+        '-f', 'hls', '-hls_time', '6', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments',
+        '-hls_segment_type', 'mpegts', '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),
+        '-master_pl_name', 'master.m3u8', '-var_stream_map', 'v:0,a:0', os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')
+    ]
+ 
     try:
         print(f"Running FFmpeg for {date}...")
         subprocess.run(ffmpeg_command, check=True)
@@ -260,8 +230,8 @@ def start_ffmpeg(eventfile, date):
 def main():
    #Create directories for segments and playlists if they don't exist
     os.makedirs(TEMP_DIR, exist_ok=True)
-    eventfile = 'event_files/2025-01-21.txt'
-    date = '2025-01-21'
+    eventfile = 'event_files/2025-01-22.txt'
+    date = '2025-01-22'
     #generate_asset_file(eventfile,3000)
     #generate_event_file(date)
     
@@ -282,5 +252,6 @@ def main():
 # Using the special variable 
 # __name__
 if __name__=="__main__":
-    main()
+    clear_s3_folder()
+    #main()
 

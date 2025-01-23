@@ -56,6 +56,7 @@ class FileUploadHandler(FileSystemEventHandler):
             print(f"Uploaded {file_type} file: {src_path} to s3://{BUCKET_NAME}/{s3_key}")
         except Exception as e:
             print(f"Error uploading {file_type} to S3: {e}")
+    
 # Utility Functions
 def clear_s3_folder():
     try:
@@ -142,6 +143,8 @@ def run_ffmpeg(event_file, date):
         '-map', '[v1out]', '-c:v:0', 'libx264', '-b:v:0', '5000k', '-maxrate:v:0', '5350k',
         '-bufsize:v:0', '3500k', '-map', 'a:0', '-c:a', 'aac', '-b:a:0', '192k', '-ac', '2',
         '-f', 'hls', '-hls_time', '6', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments',
+        '-hls_flags', 'independent_segments', 'delete_segments', 
+        '-hls_delete_threshold', '20',
         '-hls_segment_type', 'mpegts', '-hls_segment_filename', os.path.join(TEMP_DIR, f'{date}_segment_%03d.ts'),
         '-master_pl_name', 'master.m3u8', '-var_stream_map', 'v:0,a:0', os.path.join(TEMP_DIR, f'{date}_playlist.m3u8')
     ]
@@ -181,12 +184,14 @@ def start_stream(date):
     os.makedirs(TEMP_DIR, exist_ok=True)
     event_file = f'{EVENT_FILE_DIR}/{date}.txt'
 
-    clear_s3_folder()
-    clear_output_folder()
+    
 
     # Stop previous operations
     stop_ffmpeg()
     stop_event.set()
+    
+    clear_s3_folder()
+    clear_output_folder()
     if monitoring_thread and monitoring_thread.is_alive():
         monitoring_thread.join()
 

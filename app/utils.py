@@ -13,7 +13,7 @@ LOCAL_TIMEZONE = pytz.timezone('Asia/Kolkata')  # Replace with your desired time
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-BLANK_VIDEO_PATH= f"https://{BUCKET_NAME}.s3.ap-south-1.amazonaws.com/{upload_video_folder}/rsystems1crop.mp4"
+BLANK_VIDEO_PATH= f"https://{BUCKET_NAME}.s3.ap-south-1.amazonaws.com/{upload_video_folder}/blank_video.mp4"
 
 def generate_presigned_url_func(file_name):
     return s3_client.generate_presigned_url(
@@ -56,7 +56,7 @@ def generate_event_file(date):
             # Fill gap with blank videos if current time is before the event's start time
             if current_time < start_time:
                 gap_duration = (start_time - current_time).total_seconds()
-                full_blanks = int(gap_duration // 20)  # Number of 1-second blanks
+                full_blanks = int(gap_duration // 10)  # Number of 1-second blanks
 
                 # Append full blank video repetitions
                 for _ in range(full_blanks):
@@ -83,7 +83,7 @@ def generate_event_file(date):
 
         if current_time < end_of_day:
             remaining_duration = (end_of_day - current_time).total_seconds()
-            full_blanks = int(remaining_duration // 20)
+            full_blanks = int(remaining_duration // 10)
 
             # Append full blank video repetitions
             for _ in range(full_blanks):

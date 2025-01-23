@@ -6,6 +6,7 @@ from .config import s3_client, BUCKET_NAME,upload_video_folder
 import ffmpeg
 import os
 from  .stream_handler import start_stream
+import urllib.parse
 
 routes = Blueprint('routes', __name__)
 
@@ -83,11 +84,13 @@ def schedule_video():
             file_name = video['file_name']
             start_time = datetime.fromisoformat(video['start_time'])
             duration = video['duration']  # Duration in seconds
-
+           
             # Fetch metadata for the video
+            file_name = urllib.parse.unquote(file_name)
             metadata = metadata_db.getByQuery({"file_name": file_name})
             if not metadata:
                 message = f"Error scheduling {file_name}: Video metadata not found."
+                
                 break
 
             # Update schedule database
@@ -109,12 +112,18 @@ def schedule_video():
                 schedule = schedule_data["data"]
             else:
                 # Handle unexpected structure
+                print(f"Error scheduling {file_name}: Invalid schedule data structure.")
                 message = f"Error scheduling {file_name}: Invalid schedule data structure."
                 break
+        
+            print(f"Schedule for {file_name} {date_str}: {schedule}")
+           
+
 
             # Check if the file is already scheduled for the specified time
             for event in schedule['events']:
                 if event['file_name'] == file_name and event['start_time'] == str(start_time):
+                    print(f"Video {file_name} is already scheduled for {start_time}.")
                     break
             else:
                 # Create a new event if no matching event was found
@@ -170,6 +179,7 @@ def fetch_scheduled_events():
 def start_ffmpeg_stream():
     try:
         currentDate = datetime.now().date().isoformat()
+        generate_event_file(currentDate)
         start_stream(currentDate)
         return jsonify({'message': 'FFmpeg stream started successfully'}), 200
     except Exception as e:
