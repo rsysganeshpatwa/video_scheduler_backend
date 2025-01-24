@@ -26,6 +26,21 @@ stop_event = threading.Event()
 
 # File Monitoring Class
 class FileUploadHandler(FileSystemEventHandler):
+    
+    
+    def on_created(self, event):
+        print(f'event type: {event.event_type}  path : {event.src_path}')
+        if event.src_path.endswith('.ts'):
+            # Upload .ts segments
+            self.upload_file(event.src_path, '.ts')
+        
+        elif event.src_path.endswith('.m3u8'):
+            # Ensure playlist is uploaded, even if it's not fully written
+            if event.src_path.endswith('.tmp'):
+                print(f"Skipping .tmp file: {event.src_path}")
+                return
+            self.upload_file(event.src_path, '.m3u8')
+        
    
     def on_moved(self, event):
         print(f'event type: {event.event_type}  path : {event.src_path}')
