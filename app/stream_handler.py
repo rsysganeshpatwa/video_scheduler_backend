@@ -27,7 +27,6 @@ stop_event = threading.Event()
 # File Monitoring Class
 class FileUploadHandler(FileSystemEventHandler):
     
-    
     def on_created(self, event):
         print(f'event type: {event.event_type}  path : {event.src_path}')
         if event.src_path.endswith('.ts'):
