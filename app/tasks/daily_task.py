@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from ..utils import generate_event_file
 import os
-from app.stream_handler import start_stream
+from app.ffmpeg_service import start_ffmpeg_service
 
 EVENT_FILE_DIR = 'event_files/'
 
@@ -16,6 +16,6 @@ def daily_task():
 
     # Generate new event file and start stream
     generate_event_file(date)
-    start_stream(date)
+    start_ffmpeg_service(date)
     
     print(f"Daily task completed for date {date}")
