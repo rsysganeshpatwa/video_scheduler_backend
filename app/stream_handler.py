@@ -7,11 +7,14 @@ from datetime import datetime, timedelta
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import boto3
+from .hls_service import start_fetcher
+import psutil
+import signal
 
 
 # S3 setup
 s3_client = boto3.client('s3')
-BUCKET_NAME = 'tvunativeoverlay'
+BUCKET_NAME = 'pocrsibucket'
 HLS_FOLDER = 'hls/'
 
 # Path to the temporary directory for .ts files
@@ -174,21 +177,44 @@ def run_ffmpeg(event_file, date):
 
 def stop_ffmpeg():
     global ffmpeg_process
-    if ffmpeg_process and ffmpeg_process.poll() is None:
+
+    if ffmpeg_process:
+        # Attempt to stop the global ffmpeg_process
         try:
-            print("Stopping FFmpeg process...")
-            ffmpeg_process.terminate()
-            ffmpeg_process.wait(timeout=5)
-            print("FFmpeg process stopped successfully.")
+            if ffmpeg_process.poll() is None:  # Check if the process is running
+                print("Stopping global FFmpeg process...")
+                ffmpeg_process.terminate()
+                ffmpeg_process.wait(timeout=5)
+                print("Global FFmpeg process stopped successfully.")
+                ffmpeg_process = None
+                return
+            else:
+                print("Global FFmpeg process already stopped.")
         except subprocess.TimeoutExpired:
-            print("FFmpeg did not terminate in time. Forcibly killing it.")
-            ffmpeg_process.kill()
-        except Exception as e:
-            print(f"Error stopping FFmpeg: {e}")
-        finally:
+            print("Global FFmpeg process did not terminate in time. Forcibly killing it...")
+            os.kill(ffmpeg_process.pid, signal.SIGKILL)
             ffmpeg_process = None
-    else:
-        print("No FFmpeg process to stop.")
+        except Exception as e:
+            print(f"Error stopping global FFmpeg process: {e}")
+            ffmpeg_process = None
+
+    # If no global process is found or stopped, locate and stop system-wide FFmpeg processes
+    print("No global FFmpeg process found or already stopped. Searching system-wide...")
+    try:
+        for process in psutil.process_iter(attrs=['pid', 'name', 'cmdline']):
+            if "ffmpeg" in process.info['name'] or \
+               any("ffmpeg" in arg for arg in (process.info['cmdline'] or [])):
+                print(f"Found FFmpeg process (PID: {process.info['pid']}), terminating...")
+                os.kill(process.info['pid'], signal.SIGTERM)
+                psutil.Process(process.info['pid']).wait(timeout=5)
+                print(f"FFmpeg process (PID: {process.info['pid']}) terminated successfully.")
+    except psutil.NoSuchProcess:
+        print("FFmpeg process already terminated.")
+    except psutil.TimeoutExpired:
+        print("FFmpeg process did not terminate in time. Forcibly killing it...")
+        os.kill(process.info['pid'], signal.SIGKILL)
+    except Exception as e:
+        print(f"Error stopping FFmpeg process: {e}")
 
 
 # Main Streaming Control Functions
@@ -206,12 +232,13 @@ def start_stream(date):
     
     clear_s3_folder()
     clear_output_folder()
-    if monitoring_thread and monitoring_thread.is_alive():
-        monitoring_thread.join()
+    # if monitoring_thread and monitoring_thread.is_alive():
+    #     monitoring_thread.join()
 
     # Start monitoring and FFmpeg
     stop_event.clear()
-    monitoring_thread = start_file_monitoring()
+    #start_fetcher()
+   # monitoring_thread = start_file_monitoring()
     threading.Thread(target=run_ffmpeg, args=(event_file, date)).start()
 
 
@@ -220,6 +247,6 @@ def stop_stream():
 
     stop_ffmpeg()
     stop_event.set()
-    if monitoring_thread and monitoring_thread.is_alive():
-        monitoring_thread.join()
-        monitoring_thread = None
+    # if monitoring_thread and monitoring_thread.is_alive():
+    #     monitoring_thread.join()
+    #     monitoring_thread = None

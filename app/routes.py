@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify,send_from_directory
 from datetime import datetime, timedelta
 from .databases import metadata_db, schedule_db
 from .utils import generate_event_file, get_video_duration_from_s3, generate_presigned_url_func, add_metadata
@@ -7,14 +7,31 @@ import ffmpeg
 import os
 from  .stream_handler import start_stream
 import urllib.parse
+from .ffmpeg_service import start_ffmpeg_service
 
 routes = Blueprint('routes', __name__)
+
+
+# Path to the 'output_videos' directory
+OUTPUT_VIDEOS_DIR = os.path.join(os.getcwd(), "output_videos")
+
+# Ensure the directory exists
+if not os.path.exists(OUTPUT_VIDEOS_DIR):
+    os.makedirs(OUTPUT_VIDEOS_DIR)
 
 # Define default route
 
 @routes.route('/')
 def home():
     return "Welcome to the Video Scheduler API! The server is running."
+
+# Serve files from the 'output_videos' directory
+@routes.route("/output_videos/<path:filename>", methods=["GET"])
+def serve_video(filename):
+    try:
+        return send_from_directory(OUTPUT_VIDEOS_DIR, filename)
+    except FileNotFoundError:
+        return {"error": "File not found"}, 404
 
 @routes.route('/generate-presigned-url', methods=['POST'])
 def generate_presigned_url_handler():
@@ -180,7 +197,7 @@ def start_ffmpeg_stream():
     try:
         currentDate = datetime.now().date().isoformat()
         generate_event_file(currentDate)
-        start_stream(currentDate)
+        start_ffmpeg_service(currentDate)
         return jsonify({'message': 'FFmpeg stream started successfully'}), 200
     except Exception as e:
         print(f"Error starting FFmpeg stream: {e}")

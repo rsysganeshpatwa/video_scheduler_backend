@@ -6,6 +6,7 @@ import os
 from .utils import start_stream
 import threading
 
+
 # Flag to check if the scheduler has already been initialized
 scheduler_initialized = False
 
@@ -33,7 +34,7 @@ def initialize_scheduler(app):
             daily_task()
 
         # Add the daily task job
-        scheduler.add_job(daily_task, 'cron', hour=0, minute=8)  # Runs daily at midnight
+        scheduler.add_job(daily_task, 'cron', hour=9, minute=37)  # Runs daily at midnight
         print("Job added")
         scheduler.start()
         print("Scheduler started")
