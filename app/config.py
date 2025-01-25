@@ -3,7 +3,7 @@ import os
 
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 
-s3_client =  boto3.client("s3", region_name=AWS_REGION  )
+s3_client =  boto3.client("s3", region_name=AWS_REGION, endpoint_url='https://s3.ap-south-1.amazonaws.com')  
 BUCKET_NAME = 'pocrsibucket'
 BLANK_VIDEO_PATH = 'blank_video/text_video.mp4'
 EVENT_FILE_DIR = './event_files/'
