@@ -98,9 +98,11 @@ def schedule_video():
 
         # Iterate over each video in the array
         for video in videos:
+            target_id = video['target_id']
             file_name = video['file_name']
             start_time = datetime.fromisoformat(video['start_time'])
             duration = video['duration']  # Duration in seconds
+            color = video.get('color', '#10b981')
            
             # Fetch metadata for the video
             file_name = urllib.parse.unquote(file_name)
@@ -146,9 +148,11 @@ def schedule_video():
                 # Create a new event if no matching event was found
                 end_time = start_time + timedelta(seconds=duration)
                 schedule['events'].append({
+                    'target_id': video['target_id'],
                     'file_name': file_name,
                     'start_time': str(start_time),
-                    'end_time': str(end_time)
+                    'end_time': str(end_time),
+                    'color': color
                 })
                 # Update the schedule in the database
                 schedule_db.updateByQuery({"date": date_str}, {"events": schedule['events']})
