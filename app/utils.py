@@ -8,6 +8,8 @@ from .config import s3_client, BUCKET_NAME, EVENT_FILE_DIR, OUTPUT_VIDEO_DIR,OUT
 import subprocess
 from .databases import metadata_db
 import pytz
+import json
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
 LOCAL_TIMEZONE = pytz.timezone('Asia/Kolkata')  # Replace with your desired timezone
 # Configure logging
@@ -112,27 +114,42 @@ def start_stream(date):
         print(f"Error starting FFmpeg stream: {e}")
 
 def get_video_duration_from_s3(bucket_name, object_key):
-
     try:
         # Generate a pre-signed URL for the S3 object
         print(f"Bucket name: {bucket_name}")
         print(f"Object key: {object_key}")
         url = s3_client.generate_presigned_url('get_object',
-                                               Params={'Bucket': BUCKET_NAME, 'Key': object_key},
+                                               Params={'Bucket': bucket_name, 'Key': object_key},
                                                ExpiresIn=3600)  # URL valid for 1 hour
 
-        # Use ffmpeg to probe the video stream directly from the S3 URL
+        # Use subprocess to call ffprobe on the URL
         print(f"Probing video at URL: {url}")
-        probe = ffmpeg.probe(url, v='error', select_streams='v:0', show_entries='stream=duration')
-    
+        result = subprocess.run(
+            [
+                'ffprobe',
+                '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=duration',
+                '-of', 'json',
+                url
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
 
-        # Extract the duration in seconds
-        duration = float(probe['streams'][0]['duration'])
-        
+        # Parse the ffprobe output
+        if result.returncode != 0:
+            raise Exception(f"ffprobe error: {result.stderr.decode('utf-8')}")
+
+        probe_data = json.loads(result.stdout)
+        duration = float(probe_data['streams'][0]['duration'])
+
         print(f"The duration of the video is {duration:.2f} seconds")
         return duration
+
     except Exception as e:
         print(f"Error retrieving video duration: {e}")
+        return None
 
 def add_metadata(file_name, bucket_name, duration):
     try:
