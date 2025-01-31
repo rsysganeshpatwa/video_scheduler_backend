@@ -8,6 +8,7 @@ import os
 from  .stream_handler import start_stream
 import urllib.parse
 from .ffmpeg_service import start_ffmpeg_service
+import json
 
 routes = Blueprint('routes', __name__)
 
@@ -79,94 +80,117 @@ def add_metadata_api():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
-    
 @routes.route('/schedule-video', methods=['POST'])
 def schedule_video():
     try:
-        # Retrieve the array of video schedule data from the request
+        # Retrieve the JSON data from the request
         data = request.json
-        videos = data['videos']  # Array of video objects, each containing 'file_name', 'start_time', and 'duration'
+        videos = data.get('videos', [])  # Array of video objects, default to empty list
+        selected_date = data.get('selectedDate')  # Selected date in string format
 
-          # Clear the schedule_db before starting the update and initialize the response object
-        schedule_db.deleteAll()
-         
-        # Clear the schedule_db before starting the update
-        
-    
-        # Initialize the response object
-        message = "All videos scheduled successfully."
+        # If no selected date is provided, return error
+        if not selected_date:
+            return jsonify({'error': 'Selected date is required'}), 400
 
-        # Iterate over each video in the array
-        for video in videos:
-            target_id = video['target_id']
-            file_name = video['file_name']
-            start_time = datetime.fromisoformat(video['start_time'])
-            duration = video['duration']  # Duration in seconds
-            color = video.get('color', '#10b981')
-           
-            # Fetch metadata for the video
-            file_name = urllib.parse.unquote(file_name)
-            metadata = metadata_db.getByQuery({"file_name": file_name})
-            if not metadata:
-                message = f"Error scheduling {file_name}: Video metadata not found."
-                
-                break
+        # Convert the selected_date to a consistent format if it's in the long format
+        try:
+            if "GMT" in selected_date:
+                # Parse the full date string and convert to YYYY-MM-DD format
+                parsed_date = datetime.strptime(selected_date.split('GMT')[0].strip(), "%a %b %d %Y %H:%M:%S")
+                selected_date = parsed_date.strftime("%Y-%m-%d")
+        except Exception as date_error:
+            print(f"Date parsing error: {date_error}")
+            # If parsing fails, assume the date is already in correct format
 
-            # Update schedule database
-            date_str = start_time.date().isoformat()
+        # Log received data for debugging
+        print(f"Selected Date: {selected_date}")
+        print(f"Videos: {videos}")
 
-            # Query to get existing schedule for the date
-            schedule_data = schedule_db.getByQuery({"date": date_str})
+        # Initialize schedule_db with default structure
+        schedule_db = {'data': []}
 
-               # Handle different cases for schedule_data
-            if not schedule_data:
-                # No existing schedule for this date, create a new one
-                schedule = {"date": date_str, "events": []}
-                schedule_db.add(schedule)
-            elif isinstance(schedule_data, list) and len(schedule_data) > 0:
-                # If it's a list, take the first matching schedule
-                schedule = schedule_data[0]
-            elif isinstance(schedule_data, dict) and "data" in schedule_data:
-                # If it's a dictionary, access the "data" field
-                schedule = schedule_data["data"]
-            else:
-                # Handle unexpected structure
-                print(f"Error scheduling {file_name}: Invalid schedule data structure.")
-                message = f"Error scheduling {file_name}: Invalid schedule data structure."
-                break
-        
-            print(f"Schedule for {file_name} {date_str}: {schedule}")
-           
+        # Try to read existing schedule from schedule_db.json
+        try:
+            with open('schedule_db.json', 'r') as f:
+                file_content = f.read().strip()
+                if file_content:  # Only try to load if file is not empty
+                    schedule_db = json.loads(file_content)
+        except FileNotFoundError:
+            # File doesn't exist, we'll create it with default structure
+            pass
+        except json.JSONDecodeError:
+            # File exists but is empty or invalid, use default structure
+            pass
 
+        # Ensure the structure of the schedule_db
+        if 'data' not in schedule_db:
+            schedule_db['data'] = []
 
-            # Check if the file is already scheduled for the specified time
-            for event in schedule['events']:
-                if event['file_name'] == file_name and event['start_time'] == str(start_time):
-                    print(f"Video {file_name} is already scheduled for {start_time}.")
+        # Generate a random ID for new entries
+        import random
+        new_id = random.randint(100000000000000000, 999999999999999999)
+
+        # If no videos are provided, remove the entire entry for the selected date
+        if not videos:
+            schedule_db['data'] = [entry for entry in schedule_db['data'] 
+                                 if entry['date'] != selected_date]
+        else:
+            # Process videos if they exist
+            schedule_found = False
+            for entry in schedule_db['data']:
+                if entry['date'] == selected_date:
+                    # If the date matches, update the events
+                    entry['events'] = []  # Clear existing events for this date
+                    for video in videos:
+                        start_time = datetime.fromisoformat(video['start_time'].replace('T', ' '))
+                        end_time = start_time + timedelta(seconds=video['duration'])
+                        entry['events'].append({
+                            'target_id': video['target_id'],
+                            'file_name': urllib.parse.unquote(video['file_name']),
+                            'start_time': start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                            'end_time': end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                            'color': video.get('color', '#10b981'),
+                        })
+                    # Ensure ID exists
+                    if 'id' not in entry:
+                        entry['id'] = new_id
+                    schedule_found = True
                     break
-            else:
-                # Create a new event if no matching event was found
-                end_time = start_time + timedelta(seconds=duration)
-                schedule['events'].append({
-                    'target_id': video['target_id'],
-                    'file_name': file_name,
-                    'start_time': str(start_time),
-                    'end_time': str(end_time),
-                    'color': color
-                })
-                # Update the schedule in the database
-                schedule_db.updateByQuery({"date": date_str}, {"events": schedule['events']})
 
-                # Update event file (optional based on your application logic)
-                generate_event_file(date_str)
-                # Start the stream if date is today
-               
+            # If no matching date is found and we have videos, add a new entry
+            if not schedule_found and videos:
+                new_entry = {
+                    'date': selected_date,
+                    'events': [],
+                    'id': new_id
+                }
+                
+                for video in videos:
+                    start_time = datetime.fromisoformat(video['start_time'].replace('T', ' '))
+                    end_time = start_time + timedelta(seconds=video['duration'])
+                    new_entry['events'].append({
+                        'target_id': video['target_id'],
+                        'file_name': urllib.parse.unquote(video['file_name']),
+                        'start_time': start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        'end_time': end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        'color': video.get('color', '#10b981'),
+                    })
+                schedule_db['data'].append(new_entry)
 
-        return jsonify({'message': message})
+        # Sort the data array by date
+        schedule_db['data'].sort(key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d'))
+
+        # Write the updated schedule back to schedule_db.json
+        with open('schedule_db.json', 'w') as f:
+            json.dump(schedule_db, f, indent=3)
+
+        return jsonify({'message': 'Schedule updated successfully.'})
 
     except Exception as e:
         print(f"Error scheduling video: {e}")
         return jsonify({'error': str(e)}), 500
+    
+
 
 @routes.route('/fetch-metadata', methods=['GET'])
 def fetch_metadata_json():
