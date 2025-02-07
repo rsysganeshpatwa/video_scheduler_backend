@@ -9,10 +9,12 @@ from  .stream_handler import start_stream
 import urllib.parse
 from .ffmpeg_service import start_ffmpeg_service
 import json
+import pytz
 
 routes = Blueprint('routes', __name__)
 
-
+# Define the India time zone
+india_tz = pytz.timezone('Asia/Kolkata')
 # Path to the 'output_videos' directory
 OUTPUT_VIDEOS_DIR = os.path.join(os.getcwd(), "output_videos")
 
@@ -223,7 +225,7 @@ def fetch_scheduled_events():
 @routes.route('/start-ffmpeg-stream', methods=['GET'])
 def start_ffmpeg_stream():
     try:
-        currentDate = datetime.now().date().isoformat()
+        currentDate = datetime.now(india_tz).date().isoformat()
         generate_event_file(currentDate)
         start_ffmpeg_service(currentDate)
         return jsonify({'message': 'FFmpeg stream started successfully'}), 200

@@ -15,7 +15,8 @@ LOCAL_TIMEZONE = pytz.timezone('Asia/Kolkata')  # Replace with your desired time
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-BLANK_VIDEO_PATH= f"https://{BUCKET_NAME}.s3.ap-south-1.amazonaws.com/{upload_video_folder}/blank_video.mp4"
+#BLANK_VIDEO_PATH= f"https://{BUCKET_NAME}.s3.ap-south-1.amazonaws.com/{upload_video_folder}/blank_video.mp4"
+BLANK_VIDEO_PATH= f"{upload_video_folder}/blank_video.mp4"
 
 def generate_presigned_url_func(file_name):
     return s3_client.generate_presigned_url(
@@ -67,7 +68,8 @@ def generate_event_file(date):
                     line_number += 2  # Each blank video adds 2 lines (file + duration)
 
             # Append the event video
-            file_path = f"https://{BUCKET_NAME}.s3.ap-south-1.amazonaws.com/{event['file_name']}"
+            #file_path = f"https://{BUCKET_NAME}.s3.ap-south-1.amazonaws.com/{event['file_name']}"
+            file_path = f"{event['file_name']}"
             lines.append(f"file '{file_path}'")
 #            duration = (end_time - start_time).total_seconds()
  #           lines.append(f"duration {duration}")

@@ -2,11 +2,13 @@ from datetime import datetime, timedelta
 from ..utils import generate_event_file
 import os
 from app.ffmpeg_service import start_ffmpeg_service
+import pytz
 
 EVENT_FILE_DIR = 'event_files/'
+india_tz = pytz.timezone('Asia/Kolkata')
 
 def daily_task():
-    date = datetime.now().date().isoformat()
+    date = datetime.now(india_tz).date().isoformat()
 
     # Delete previous day file
     previous_date = (datetime.now() - timedelta(days=1)).date().isoformat()
