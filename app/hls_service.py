@@ -34,17 +34,30 @@ def delete_all_fetchers():
 # Function to start a fetcher
 def start_fetcher():
     delete_all_fetchers()
+    # fetcher_config = {
+    #     "name": "eyevinn-s3",  # Unique name for the fetcher session
+    #     "url": "http://localhost:5000/output_videos/master.m3u8",  # Source HLS stream
+    #     "output": "s3",  # Plugin for S3
+    #     "payload": {
+    #         "bucket": BUCKET_NAME,  # Target S3 bucket name
+    #         "folder": "hls-test",  # Folder within the S3 bucket
+    #     },
+    #     "windowSize": 240,  # Window size for the fetcher
+    #    "concurrency": 40,  # Number of concurrent fetches
+    # }
+    
     fetcher_config = {
-        "name": "eyevinn-s3",  # Unique name for the fetcher session
-        "url": "http://localhost:5000/output_videos/master.m3u8",  # Source HLS stream
-        "output": "s3",  # Plugin for S3
+        "name": "Stream1",
+        "url": "http://localhost:5000/output_videos/master.m3u8",
+        "output": "mediapackage",
         "payload": {
-            "bucket": BUCKET_NAME,  # Target S3 bucket name
-            "folder": "hls",  # Folder within the S3 bucket
-        },
-        "windowSize": 240,  # Window size for the fetcher
-       "concurrency": 40,  # Number of concurrent fetches
-    }
+            "ingestUrls": [ {
+            "url": "https://b4fccfcab3a283c8.mediapackage.ap-south-1.amazonaws.com/in/v2/194f7ed2425a4c22816733d8f702b66c/194f7ed2425a4c22816733d8f702b66c/channel",
+            "username": "ad2ac5ffa5c64906a52a5d1ae2c82483",
+            "password": "46f9762c81f6473ebf44fe57d7bbb7a7"
+            } ]
+        }
+        }
 
     try:
         print("Starting fetcher...")
