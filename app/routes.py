@@ -10,24 +10,175 @@ import urllib.parse
 from .ffmpeg_service import start_ffmpeg_service
 import json
 import pytz
+import subprocess
 
 routes = Blueprint('routes', __name__)
-
+# Path to the JSON file
+STREAM_DB_FILE = "stream_db.json"  # 🔹 Path to your JSON database
 # Define the India time zone
 india_tz = pytz.timezone('Asia/Kolkata')
 # Path to the 'output_videos' directory
 OUTPUT_VIDEOS_DIR = os.path.join(os.getcwd(), "output_videos")
+FFMPEG_PATH = "C:\Program Files\ffmpeg\bin\ffmpeg.exe"  # Update this path
+active_streams = {}  # ✅ Store active stream statuses
+stream_status = {"is_streaming": False}
 
-# Ensure the directory exists
+# Ensure the directory existsif os.path.exists(JSON_FILE):
+
 if not os.path.exists(OUTPUT_VIDEOS_DIR):
     os.makedirs(OUTPUT_VIDEOS_DIR)
 
 # Define default route
+# Path to your video files
+VIDEO_FOLDER = os.path.join(os.getcwd(), "event_files", "content-scheduler", "uploaded_videos")
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
 @routes.route('/')
 def home():
     return "Welcome to the Video Scheduler API! The server is running."
 
+@routes.route('/videos/<filename>')
+def get_video_file(filename):
+    """Serve video files dynamically"""
+    files = os.listdir(VIDEO_FOLDER)
+    if filename not in files:
+        return jsonify({"error": "File not found", "available_files": files}), 404
+    return send_from_directory(VIDEO_FOLDER, filename)
+
+@routes.route('/videos')
+def list_videos():
+    # return jsonify({"videos": video_files})
+    try:
+        """Get a list of all video files"""
+        files = os.listdir(VIDEO_FOLDER)
+        data = [file for file in files if file.endswith((".mp4", ".avi", ".mkv", ".mov"))]  # Filter video files
+        print(data)
+        # update file_name 
+        
+        # add one more field bucket file url
+        # for data in metadata_json:
+        #     data['file_url'] = f"https://{BUCKET_NAME}.s3.amazonaws.com/{data['file_name']}"
+        #     file_name = os.path.basename(data['file_name'])
+        #     data['file_name'] = os.path.splitext(file_name)[0]
+
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+processes = {}
+def save_stream_data(data):
+    """🔹 Save stream data to JSON file."""
+    with open(STREAM_DB_FILE, "w") as file:
+        json.dump(data, file, indent=4)  # 🔹 Save back to file
+@routes.route('/start-stream', methods=['POST'])
+def start_stream():
+    data = request.json  # ✅ Get request data
+    stream_status["is_streaming"] = True
+
+    print("Received Data:", data)  # ✅ Debugging
+
+    streams = data.get("streams", [])  # ✅ Get all streams
+    input_filename = data.get("selectedSource")  # ✅ Get input file name
+    input_url = os.path.join(VIDEO_FOLDER, input_filename)  # ✅ Construct path
+
+    print(f"Full Video Path: {input_url}")  # ✅ Debugging step
+
+    if not os.path.exists(input_url):
+        return jsonify({"error": f"File not found at {input_url}"}), 400  # ✅ File check
+
+    active_processes = []  # ✅ Store all active streams
+
+    for stream in streams:
+        stream_id = stream.get("id")
+        output_url = stream.get("url")
+
+        if not output_url:
+            continue  # ✅ Skip if no output URL
+
+        if stream_id in processes:
+            return jsonify({"error": f"Stream {stream_id} already running."}), 400
+
+        # ✅ FFmpeg command for RTMPS & RTMP
+        ffmpeg_cmd = [
+            "ffmpeg", "-re", "-i", input_url,
+            "-c:v", "libx264", "-b:v", "750K",  # 🔹 Lower video bitrate to 750Kbps
+            "-c:a", "aac", "-b:a", "96K",  # 🔹 Lower audio bitrate to 96Kbps
+            "-f", "flv", "-rtmp_live", "live", output_url
+        ]
+
+        process = subprocess.Popen(ffmpeg_cmd)
+        processes[stream_id] = process
+        active_processes.append({"streamId": stream_id, "outputUrl": output_url})
+
+    # 🔹 Save data to JSON
+    save_stream_data({
+        "date": data.get("date"),
+        "scheduleType": data.get("scheduleType"),
+        "time": data.get("time"),
+        "sourceType": data.get("sourceType"),
+        "selectedSource": input_filename,
+        "streams": active_processes
+    })
+
+    return jsonify({
+        "message": "Streams started!",
+        "is_streaming": True,
+        "streams": active_processes
+    })
+
+@routes.route("/stop-stream", methods=["POST"])
+def stop_stream():
+    # Terminate all active streaming processes
+    for stream_id, process in list(processes.items()):
+        try:
+            process.terminate()           # Attempt graceful termination
+            process.wait(timeout=10)      # Wait up to 10 seconds for exit
+        except Exception as e:
+            process.kill()                # Force kill if needed
+        # Remove the process from the dictionary
+        processes.pop(stream_id, None)
+    
+    # Remove the persisted record from the JSON DB by overwriting the file with an empty list
+    if os.path.exists(STREAM_DB_FILE):
+        try:
+            with open(STREAM_DB_FILE, "w") as file:
+                json.dump([], file, indent=4)
+        except Exception as e:
+            return jsonify({"error": f"Failed to clear stream data: {e}"}), 500
+
+    # Update streaming status
+    stream_status["is_streaming"] = False
+    return jsonify({"message": "Stream stopped", "is_streaming": False})
+
+@routes.route("/get_stream_data", methods=["GET"])
+def get_stream_data():
+    if os.path.exists(STREAM_DB_FILE):
+        try:
+            with open(STREAM_DB_FILE, "r") as file:
+                content = file.read().strip()  # Remove whitespace
+                if not content:  # File is empty
+                    return jsonify({}), 200
+                try:
+                    data = json.loads(content)
+                except json.JSONDecodeError as e:
+                    # app.logger.error("JSONDecodeError while parsing stream data: %s", e)
+                    return jsonify({"error": "Invalid JSON data"}), 500
+
+                # If data is a list, return the latest entry; adjust as needed
+                if isinstance(data, list) and data:
+                    return jsonify(data[-1]), 200
+                # Otherwise, if data is a dict or empty list, return as is
+                return jsonify(data), 200
+        except Exception as e:
+            app.logger.error("Error reading stream data: %s", e)
+            return jsonify({"error": "Internal server error"}), 500
+    else:
+        return jsonify({"error": "Stream data not found"}), 404
+@routes.route('/stream-status', methods=['GET'])
+def get_stream_status():
+    return jsonify({"is_streaming": stream_status["is_streaming"]})
 # Serve files from the 'output_videos' directory
 @routes.route("/output_videos/<path:filename>", methods=["GET"])
 def serve_video(filename):
