@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify,send_from_directory
 from datetime import datetime, timedelta
-from video_scheduler_backend.app.scheduler import schedule_stream_job
+#from video_scheduler_backend.app.scheduler import schedule_stream_job
 from .databases import metadata_db, schedule_db
 from .utils import generate_event_file, get_video_duration_from_s3, generate_presigned_url_func, add_metadata
 from .config import s3_client, BUCKET_NAME,upload_video_folder
@@ -204,7 +204,7 @@ def start_stream():
     if not streams:
         return jsonify({"error": "No output streams provided"}), 400  # ✅ Check if streams exist
  
-    stream_id = "-".join([stream["id"] for stream in streams])  # Combine stream IDs
+    stream_id = "-".join([str(stream["id"]) for stream in streams])  # Convert IDs to strings
     output_urls = [stream["url"] for stream in streams if "url" in stream]
  
     if stream_id in processes:
@@ -213,31 +213,24 @@ def start_stream():
     # ✅ Construct `tee` output string for multiple streams
     tee_output = "|".join([f"[f=flv]{url}" for url in output_urls])
  
-    # ✅ FFmpeg command using `tee` for multiple RTMP outputs
+   
+        # Build the FFmpeg command
     ffmpeg_cmd = [
-        "ffmpeg", "-re", "-i", input_url,
-        "-c:v", "libx264", "-preset", "veryfast", "-b:v", "750K", "-maxrate", "750K", "-bufsize", "1500K",
-        "-c:a", "aac", "-b:a", "96K", "-ar", "44100",
-        "-f", "tee", tee_output
-    ]
+            "ffmpeg", "-re", "-i", input_url,
+            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+            "-c:v", "libx264", "-preset", "veryfast", "-b:v", "750K", "-maxrate", "750K", "-bufsize", "1500K",
+            "-c:a", "aac", "-b:a", "96K", "-ar", "44100"
+        ]
+
+        # Add multiple outputs
+    for output in output_urls:
+            ffmpeg_cmd.extend(["-map", "0:v", "-map", "0:a", "-f", "flv", output])
+        
  
     print(f"Starting stream: {ffmpeg_cmd}")  # ✅ Debugging
     process = subprocess.Popen(ffmpeg_cmd)
-    # Capture output & error logs
-    process = subprocess.Popen(
-        ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
- 
-    # Read output & error in real-time
-    for line in process.stderr:
-        print(line.strip())  # ✅ Print FFmpeg error logs for debugging
- 
-    process.wait()  # ✅ Ensure the process completes before exiting
- 
-    if process.returncode != 0:
-        print(f"❌ FFmpeg exited with error code: {process.returncode}")
-    else:
-        print("✅ FFmpeg streaming successful!")
+  
+    print("✅ FFmpeg streaming successful!")
     # Store process ID
     processes[stream_id] = process
  
