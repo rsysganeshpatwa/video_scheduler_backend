@@ -1,11 +1,11 @@
 from flask import Blueprint, request, jsonify,send_from_directory
 from datetime import datetime, timedelta
+from video_scheduler_backend.app.scheduler import schedule_stream_job
 from .databases import metadata_db, schedule_db
 from .utils import generate_event_file, get_video_duration_from_s3, generate_presigned_url_func, add_metadata
 from .config import s3_client, BUCKET_NAME,upload_video_folder
 import ffmpeg
 import os
-from  .stream_handler import start_stream
 import urllib.parse
 from .ffmpeg_service import start_ffmpeg_service
 import json
@@ -19,10 +19,9 @@ STREAM_DB_FILE = "stream_db.json"  # 🔹 Path to your JSON database
 india_tz = pytz.timezone('Asia/Kolkata')
 # Path to the 'output_videos' directory
 OUTPUT_VIDEOS_DIR = os.path.join(os.getcwd(), "output_videos")
-FFMPEG_PATH = "C:\Program Files\ffmpeg\bin\ffmpeg.exe"  # Update this path
+FFMPEG_PATH = "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe" # Update this path
 active_streams = {}  # ✅ Store active stream statuses
 stream_status = {"is_streaming": False}
-
 # Ensure the directory existsif os.path.exists(JSON_FILE):
 
 if not os.path.exists(OUTPUT_VIDEOS_DIR):
@@ -32,6 +31,8 @@ if not os.path.exists(OUTPUT_VIDEOS_DIR):
 # Path to your video files
 VIDEO_FOLDER = os.path.join(os.getcwd(), "event_files", "content-scheduler", "uploaded_videos")
 UPLOAD_FOLDER = 'uploads'
+processes = {}
+
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
@@ -66,68 +67,198 @@ def list_videos():
         return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-processes = {}
 def save_stream_data(data):
     """🔹 Save stream data to JSON file."""
     with open(STREAM_DB_FILE, "w") as file:
         json.dump(data, file, indent=4)  # 🔹 Save back to file
+
+def actual_start_stream(data):
+    """
+    Starts the stream using FFmpeg.
+    If data["sourceType"] is "list", use the local file as input.
+    Otherwise, use an HLS URL as input.
+    """
+    # Set stream status to true
+    stream_status["is_streaming"] = True
+    print("Received Data:", data)
+
+    # Initialize list to store active process information
+    active_processes = []
+
+    # Check the sourceType from the payload
+    if data.get("sourceType") == "list":
+        input_filename = data.get("selectedSource")
+        input_url = os.path.join(VIDEO_FOLDER, input_filename)
+        print(f"Full Video Path: {input_url}")
+        if not os.path.exists(input_url):
+            return jsonify({"error": f"File not found at {input_url}"}), 400
+
+        # Process each stream from the streams list
+        streams = data.get("streams", [])
+        for stream in streams:
+            stream_id = stream.get("id")
+            output_url = stream.get("url")
+            if not output_url:
+                continue  # Skip if no output URL
+            if stream_id in processes:
+                return jsonify({"error": f"Stream {stream_id} already running."}), 400
+
+            # Build FFmpeg command for local file input
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-re",
+                "-i", input_url,                     # Local file input
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-b:v", "1500k",
+                "-maxrate", "1500k",
+                "-bufsize", "3000k",
+                "-pix_fmt", "yuv420p",
+                "-g", "50",                          # Keyframe interval (adjust based on fps)
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-ar", "44100",
+                "-f", "flv",
+                "-rtmp_buffer", "3000",
+                "-rtmp_live", "live",
+                "-reconnect", "1",
+                "-reconnect_at_eof", "1",
+                "-reconnect_streamed", "1",
+                output_url                          # Destination RTMP URL
+            ]
+
+            process = subprocess.Popen(ffmpeg_cmd)
+            processes[stream_id] = process
+            active_processes.append({"streamId": stream_id, "outputUrl": output_url})
+        
+        # Save record to JSON DB
+        save_stream_data({
+            "date": data.get("date"),
+            "scheduleType": data.get("scheduleType"),
+            "time": data.get("time"),
+            "sourceType": data.get("sourceType"),
+            "selectedSource": input_filename,
+            "streams": active_processes
+        })
+
+        return jsonify({
+            "message": "Streams started!",
+            "is_streaming": True,
+            "streams": active_processes
+        })
+
+    else:
+        # For other source types (e.g. HLS input), use the alternative command.
+        # In this example, the HLS URL is hardcoded.
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-i", "rtmp://ec2-3-108-220-57.ap-south-1.compute.amazonaws.com/live/stream",
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-f", "flv",
+            "rtmp://13.60.60.72/live/sZFLnowV9aKb"
+        ]
+
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-i", "rtmp://ec2-3-108-220-57.ap-south-1.compute.amazonaws.com/live/stream",
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-f", "tee",
+            "[f=flv]rtmp://13.60.60.72/live/sZFLnowV9aKb|[f=flv]rtmp://live-api-s.facebook.com:80/rtmp/FB-3925227551052370-0-Ab2ba39_Kf8Ws9qUVbYLzp07|[f=flv]rtmp://live.linkedin.com/live/your_linkedin_stream_key"
+        ]
+        
+        process = subprocess.Popen(ffmpeg_cmd)
+        # Use a default key since there's no dynamic stream id
+        processes["default"] = process
+        save_stream_data({
+            "date": data.get("date"),
+            "scheduleType": data.get("scheduleType"),
+            "time": data.get("time"),
+            "sourceType": data.get("sourceType"),
+            "selectedSource": data.get("selectedSource"),
+            "streams": [{"streamId": "default", "outputUrl": "rtmp://13.60.60.72/live/Ki2YNXzsCA95"}]
+        })
+        return jsonify({
+            "message": "Stream started with HLS input!",
+            "is_streaming": True,
+            "streams": [{"streamId": "default", "outputUrl": "rtmp://13.60.60.72/live/Ki2YNXzsCA95"}]
+        })
 @routes.route('/start-stream', methods=['POST'])
 def start_stream():
     data = request.json  # ✅ Get request data
     stream_status["is_streaming"] = True
-
+ 
     print("Received Data:", data)  # ✅ Debugging
-
-    streams = data.get("streams", [])  # ✅ Get all streams
-    input_filename = data.get("selectedSource")  # ✅ Get input file name
-    input_url = os.path.join(VIDEO_FOLDER, input_filename)  # ✅ Construct path
-
-    print(f"Full Video Path: {input_url}")  # ✅ Debugging step
-
-    if not os.path.exists(input_url):
-        return jsonify({"error": f"File not found at {input_url}"}), 400  # ✅ File check
-
-    active_processes = []  # ✅ Store all active streams
-
-    for stream in streams:
-        stream_id = stream.get("id")
-        output_url = stream.get("url")
-
-        if not output_url:
-            continue  # ✅ Skip if no output URL
-
-        if stream_id in processes:
-            return jsonify({"error": f"Stream {stream_id} already running."}), 400
-
-        # ✅ FFmpeg command for RTMPS & RTMP
-        ffmpeg_cmd = [
-            "ffmpeg", "-re", "-i", input_url,
-            "-c:v", "libx264", "-b:v", "750K",  # 🔹 Lower video bitrate to 750Kbps
-            "-c:a", "aac", "-b:a", "96K",  # 🔹 Lower audio bitrate to 96Kbps
-            "-f", "flv", "-rtmp_live", "live", output_url
-        ]
-
-        process = subprocess.Popen(ffmpeg_cmd)
-        processes[stream_id] = process
-        active_processes.append({"streamId": stream_id, "outputUrl": output_url})
-
+ 
+    streams = data.get("streams", [])  # ✅ Get all streams (array of {id, title, url})
+    input_url = data.get("selectedSource")  # ✅ Get input file name
+    source_type = data.get("sourceType")  # ✅ Get source type 
+    if  source_type == "list":
+        input_url = os.path.join(VIDEO_FOLDER, input_url)  # ✅ Construct path
+        if not os.path.exists(input_url):
+            return jsonify({"error": f"File not found at {input_url}"}), 400  # ✅ File check
+ 
+    print(f"Full Video Path: {input_url}");  # ✅ Debugging step
+    
+    if not streams:
+        return jsonify({"error": "No output streams provided"}), 400  # ✅ Check if streams exist
+ 
+    stream_id = "-".join([stream["id"] for stream in streams])  # Combine stream IDs
+    output_urls = [stream["url"] for stream in streams if "url" in stream]
+ 
+    if stream_id in processes:
+        return jsonify({"error": f"Streams with ID {stream_id} are already running."}), 400
+ 
+    # ✅ Construct `tee` output string for multiple streams
+    tee_output = "|".join([f"[f=flv]{url}" for url in output_urls])
+ 
+    # ✅ FFmpeg command using `tee` for multiple RTMP outputs
+    ffmpeg_cmd = [
+        "ffmpeg", "-re", "-i", input_url,
+        "-c:v", "libx264", "-preset", "veryfast", "-b:v", "750K", "-maxrate", "750K", "-bufsize", "1500K",
+        "-c:a", "aac", "-b:a", "96K", "-ar", "44100",
+        "-f", "tee", tee_output
+    ]
+ 
+    print(f"Starting stream: {ffmpeg_cmd}")  # ✅ Debugging
+    process = subprocess.Popen(ffmpeg_cmd)
+    # Capture output & error logs
+    process = subprocess.Popen(
+        ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+ 
+    # Read output & error in real-time
+    for line in process.stderr:
+        print(line.strip())  # ✅ Print FFmpeg error logs for debugging
+ 
+    process.wait()  # ✅ Ensure the process completes before exiting
+ 
+    if process.returncode != 0:
+        print(f"❌ FFmpeg exited with error code: {process.returncode}")
+    else:
+        print("✅ FFmpeg streaming successful!")
+    # Store process ID
+    processes[stream_id] = process
+ 
+    # Prepare response data
+    active_processes = [{"streamId": stream["id"], "title": stream["title"], "outputUrl": stream["url"]} for stream in streams]
+ 
     # 🔹 Save data to JSON
     save_stream_data({
         "date": data.get("date"),
         "scheduleType": data.get("scheduleType"),
         "time": data.get("time"),
         "sourceType": data.get("sourceType"),
-        "selectedSource": input_filename,
+        "selectedSource": input_url,
         "streams": active_processes
     })
-
+ 
     return jsonify({
         "message": "Streams started!",
         "is_streaming": True,
         "streams": active_processes
     })
-
 @routes.route("/stop-stream", methods=["POST"])
 def stop_stream():
     # Terminate all active streaming processes
