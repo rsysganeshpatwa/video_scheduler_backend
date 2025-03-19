@@ -7,10 +7,11 @@ from flask import current_app
 import threading
 
 # Flag to check if the scheduler has already been initialized
+scheduler_instance = None
 scheduler_initialized = False
 
 def initialize_scheduler(app):
-    global scheduler_initialized
+    global scheduler_initialized, scheduler_instance
     
     # If scheduler is already initialized, skip initialization
     if scheduler_initialized:
@@ -45,3 +46,17 @@ def initialize_scheduler(app):
 
     # Mark the scheduler as initialized
     scheduler_initialized = True
+def schedule_stream_job(run_date, func, *args, **kwargs):
+    """
+    Schedules a one-time job to run at the given run_date.
+    :param run_date: datetime object when the job should run.
+    :param func: callable function to run.
+    :param args: positional arguments for the function.
+    :param kwargs: keyword arguments for the function.
+    """
+    global scheduler_instance
+    if scheduler_instance:
+        scheduler_instance.add_job(func, 'date', run_date=run_date, args=args, kwargs=kwargs)
+        print(f"Scheduled job '{func.__name__}' at {run_date}")
+    else:
+        print("Scheduler is not initialized.")
