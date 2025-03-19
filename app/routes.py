@@ -72,118 +72,6 @@ def save_stream_data(data):
     with open(STREAM_DB_FILE, "w") as file:
         json.dump(data, file, indent=4)  # 🔹 Save back to file
 
-def actual_start_stream(data):
-    """
-    Starts the stream using FFmpeg.
-    If data["sourceType"] is "list", use the local file as input.
-    Otherwise, use an HLS URL as input.
-    """
-    # Set stream status to true
-    stream_status["is_streaming"] = True
-    print("Received Data:", data)
-
-    # Initialize list to store active process information
-    active_processes = []
-
-    # Check the sourceType from the payload
-    if data.get("sourceType") == "list":
-        input_filename = data.get("selectedSource")
-        input_url = os.path.join(VIDEO_FOLDER, input_filename)
-        print(f"Full Video Path: {input_url}")
-        if not os.path.exists(input_url):
-            return jsonify({"error": f"File not found at {input_url}"}), 400
-
-        # Process each stream from the streams list
-        streams = data.get("streams", [])
-        for stream in streams:
-            stream_id = stream.get("id")
-            output_url = stream.get("url")
-            if not output_url:
-                continue  # Skip if no output URL
-            if stream_id in processes:
-                return jsonify({"error": f"Stream {stream_id} already running."}), 400
-
-            # Build FFmpeg command for local file input
-            ffmpeg_cmd = [
-                "ffmpeg",
-                "-re",
-                "-i", input_url,                     # Local file input
-                "-c:v", "libx264",
-                "-preset", "veryfast",
-                "-b:v", "1500k",
-                "-maxrate", "1500k",
-                "-bufsize", "3000k",
-                "-pix_fmt", "yuv420p",
-                "-g", "50",                          # Keyframe interval (adjust based on fps)
-                "-c:a", "aac",
-                "-b:a", "128k",
-                "-ar", "44100",
-                "-f", "flv",
-                "-rtmp_buffer", "3000",
-                "-rtmp_live", "live",
-                "-reconnect", "1",
-                "-reconnect_at_eof", "1",
-                "-reconnect_streamed", "1",
-                output_url                          # Destination RTMP URL
-            ]
-
-            process = subprocess.Popen(ffmpeg_cmd)
-            processes[stream_id] = process
-            active_processes.append({"streamId": stream_id, "outputUrl": output_url})
-        
-        # Save record to JSON DB
-        save_stream_data({
-            "date": data.get("date"),
-            "scheduleType": data.get("scheduleType"),
-            "time": data.get("time"),
-            "sourceType": data.get("sourceType"),
-            "selectedSource": input_filename,
-            "streams": active_processes
-        })
-
-        return jsonify({
-            "message": "Streams started!",
-            "is_streaming": True,
-            "streams": active_processes
-        })
-
-    else:
-        # For other source types (e.g. HLS input), use the alternative command.
-        # In this example, the HLS URL is hardcoded.
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-i", "rtmp://ec2-3-108-220-57.ap-south-1.compute.amazonaws.com/live/stream",
-            "-c:v", "copy",
-            "-c:a", "copy",
-            "-f", "flv",
-            "rtmp://13.60.60.72/live/sZFLnowV9aKb"
-        ]
-
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-i", "rtmp://ec2-3-108-220-57.ap-south-1.compute.amazonaws.com/live/stream",
-            "-c:v", "copy",
-            "-c:a", "copy",
-            "-f", "tee",
-            "[f=flv]rtmp://13.60.60.72/live/sZFLnowV9aKb|[f=flv]rtmp://live-api-s.facebook.com:80/rtmp/FB-3925227551052370-0-Ab2ba39_Kf8Ws9qUVbYLzp07|[f=flv]rtmp://live.linkedin.com/live/your_linkedin_stream_key"
-        ]
-        
-        process = subprocess.Popen(ffmpeg_cmd)
-        # Use a default key since there's no dynamic stream id
-        processes["default"] = process
-        save_stream_data({
-            "date": data.get("date"),
-            "scheduleType": data.get("scheduleType"),
-            "time": data.get("time"),
-            "sourceType": data.get("sourceType"),
-            "selectedSource": data.get("selectedSource"),
-            "streams": [{"streamId": "default", "outputUrl": "rtmp://13.60.60.72/live/Ki2YNXzsCA95"}]
-        })
-        return jsonify({
-            "message": "Stream started with HLS input!",
-            "is_streaming": True,
-            "streams": [{"streamId": "default", "outputUrl": "rtmp://13.60.60.72/live/Ki2YNXzsCA95"}]
-        })
 @routes.route('/start-stream', methods=['POST'])
 def start_stream():
     data = request.json  # ✅ Get request data
@@ -212,21 +100,16 @@ def start_stream():
  
     # ✅ Construct `tee` output string for multiple streams
     tee_output = "|".join([f"[f=flv]{url}" for url in output_urls])
- 
-   
-        # Build the FFmpeg command
+     # Build the FFmpeg command
     ffmpeg_cmd = [
             "ffmpeg", "-re", "-i", input_url,
             "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
             "-c:v", "libx264", "-preset", "veryfast", "-b:v", "750K", "-maxrate", "750K", "-bufsize", "1500K",
             "-c:a", "aac", "-b:a", "96K", "-ar", "44100"
         ]
-
-        # Add multiple outputs
+    # Add multiple outputs
     for output in output_urls:
-            ffmpeg_cmd.extend(["-map", "0:v", "-map", "0:a", "-f", "flv", output])
-        
- 
+            ffmpeg_cmd.extend(["-map", "0:v", "-map", "0:a?", "-f", "flv", output])
     print(f"Starting stream: {ffmpeg_cmd}")  # ✅ Debugging
     process = subprocess.Popen(ffmpeg_cmd)
   
