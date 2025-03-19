@@ -15,11 +15,11 @@ import subprocess
 routes = Blueprint('routes', __name__)
 # Path to the JSON file
 STREAM_DB_FILE = "stream_db.json"  # 🔹 Path to your JSON database
+METADATA_DB_FILE = "metadata_db.json"
 # Define the India time zone
 india_tz = pytz.timezone('Asia/Kolkata')
 # Path to the 'output_videos' directory
 OUTPUT_VIDEOS_DIR = os.path.join(os.getcwd(), "output_videos")
-FFMPEG_PATH = "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe" # Update this path
 active_streams = {}  # ✅ Store active stream statuses
 stream_status = {"is_streaming": False}
 # Ensure the directory existsif os.path.exists(JSON_FILE):
@@ -53,16 +53,16 @@ def list_videos():
     # return jsonify({"videos": video_files})
     try:
         """Get a list of all video files"""
-        files = os.listdir(VIDEO_FOLDER)
-        data = [file for file in files if file.endswith((".mp4", ".avi", ".mkv", ".mov"))]  # Filter video files
-        print(data)
-        # update file_name 
+        # files = os.listdir(VIDEO_FOLDER)
+        # data = [file for file in files if file.endswith((".mp4", ".avi", ".mkv", ".mov"))]  # Filter video files
+        # print(data)
+        #update file_name 
         
         # add one more field bucket file url
-        # for data in metadata_json:
-        #     data['file_url'] = f"https://{BUCKET_NAME}.s3.amazonaws.com/{data['file_name']}"
-        #     file_name = os.path.basename(data['file_name'])
-        #     data['file_name'] = os.path.splitext(file_name)[0]
+        for data in METADATA_DB_FILE:
+            data['file_url'] = f"https://{BUCKET_NAME}.s3.amazonaws.com/{data['file_name']}"
+            file_name = os.path.basename(data['file_name'])
+            data['file_name'] = os.path.splitext(file_name)[0]
 
         return jsonify(data), 200
     except Exception as e:
@@ -82,17 +82,17 @@ def start_stream():
     streams = data.get("streams", [])  # ✅ Get all streams (array of {id, title, url})
     input_url = data.get("selectedSource")  # ✅ Get input file name
     source_type = data.get("sourceType")  # ✅ Get source type 
-    if  source_type == "list":
-        input_url = os.path.join(VIDEO_FOLDER, input_url)  # ✅ Construct path
-        if not os.path.exists(input_url):
-            return jsonify({"error": f"File not found at {input_url}"}), 400  # ✅ File check
+    stream_id = data.get("streamDataId")  # ✅ Get stream ID
+    # if  source_type == "list":
+    #     input_url = os.path.join(VIDEO_FOLDER, input_url)  # ✅ Construct path
+    #     if not os.path.exists(input_url):
+    #         return jsonify({"error": f"File not found at {input_url}"}), 400  # ✅ File check
  
     print(f"Full Video Path: {input_url}");  # ✅ Debugging step
     
     if not streams:
         return jsonify({"error": "No output streams provided"}), 400  # ✅ Check if streams exist
  
-    stream_id = "-".join([str(stream["id"]) for stream in streams])  # Convert IDs to strings
     output_urls = [stream["url"] for stream in streams if "url" in stream]
  
     if stream_id in processes:
@@ -123,11 +123,13 @@ def start_stream():
     # 🔹 Save data to JSON
     save_stream_data({
         "date": data.get("date"),
+        "streamDataId": stream_id,
         "scheduleType": data.get("scheduleType"),
         "time": data.get("time"),
         "sourceType": data.get("sourceType"),
         "selectedSource": input_url,
-        "streams": active_processes
+        "streams": active_processes,
+        "status": "active"
     })
  
     return jsonify({

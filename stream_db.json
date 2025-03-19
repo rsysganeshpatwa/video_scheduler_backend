@@ -1,14 +1,1 @@
-{
-    "date": "2025-03-18",
-    "scheduleType": "now",
-    "time": "Now",
-    "sourceType": "url",
-    "selectedSource": "rtmp://ec2-3-108-220-57.ap-south-1.compute.amazonaws.com/live",
-    "streams": [
-        {
-            "streamId": "default",
-            "title": "linkedin",
-            "outputUrl": "rtmp://13.60.60.72/live/Ki2YNXzsCA95"
-        }
-    ]
-}
+[]
