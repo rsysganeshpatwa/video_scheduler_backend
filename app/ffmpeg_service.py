@@ -3,7 +3,7 @@ from flask import jsonify
 import os
 from .hls_service import start_fetcher
 
-FFMPEG_SERVICE_URL = "http://localhost:5001/ffmpeg/start"
+FFMPEG_SERVICE_URL = "http://video_ffmpeg_service:5001/ffmpeg/start"
 
 def start_ffmpeg_service(current_date):
     try:
@@ -24,7 +24,7 @@ def start_ffmpeg_service(current_date):
         response = requests.post(FFMPEG_SERVICE_URL, json=data)
 
         if response.status_code == 200:
-            start_fetcher()
+            #start_fetcher()
             return jsonify({'message': 'FFmpeg stream started successfully'}), 200
         else:
             return jsonify({'error': 'Failed to start FFmpeg stream', 'details': response.json()}), response.status_code

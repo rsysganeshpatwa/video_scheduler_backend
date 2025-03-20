@@ -11,6 +11,8 @@ from .ffmpeg_service import start_ffmpeg_service
 import json
 import pytz
 import subprocess
+import threading
+import time
 
 routes = Blueprint('routes', __name__)
 # Path to the JSON file
@@ -72,6 +74,38 @@ def save_stream_data(data):
     with open(STREAM_DB_FILE, "w") as file:
         json.dump(data, file, indent=4)  # 🔹 Save back to file
 
+def ffmpeg_runner(ffmpeg_cmd, stream_id):
+    """ Runs FFmpeg in a loop, restarting if it fails, unless stopped """
+    while stream_status.get('is_streaming', False):  # ✅ Check if streaming is active
+        print(f"Starting FFmpeg for stream {stream_id} with command:\n{' '.join(ffmpeg_cmd)}")
+
+        try:
+            process = subprocess.Popen(
+                ffmpeg_cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                text=True
+            )
+
+            processes[stream_id] = process  # ✅ Store process reference
+
+            # ✅ Read FFmpeg logs in real-time
+            for line in process.stderr:
+                print(line, end="")  # Print FFmpeg logs in real-time
+
+            stdout, stderr = process.communicate()  # ✅ Wait for process to exit
+
+            if not stream_status.get('is_streaming', False):  # ✅ Exit loop if stopped
+                print(f"❌ Stream {stream_id} stopped manually.")
+                break
+
+            print(f"⚠️ Stream {stream_id} crashed! Restarting in 5 seconds...")
+            time.sleep(5)  # ✅ Wait before restarting
+
+        except Exception as e:
+            print(f"🚨 Error running FFmpeg: {e}")
+            break  # ✅ Exit loop on critical failure
+
 @routes.route('/start-stream', methods=['POST'])
 def start_stream():
     data = request.json  # ✅ Get request data
@@ -80,48 +114,58 @@ def start_stream():
     print("Received Data:", data)  # ✅ Debugging
  
     streams = data.get("streams", [])  # ✅ Get all streams (array of {id, title, url})
-    input_url = data.get("selectedSource")  # ✅ Get input file name
+    input_url = data.get("selectedSource")  # ✅ Get input URL
     source_type = data.get("sourceType")  # ✅ Get source type 
     stream_id = data.get("streamDataId")  # ✅ Get stream ID
-    # if  source_type == "list":
-    #     input_url = os.path.join(VIDEO_FOLDER, input_url)  # ✅ Construct path
-    #     if not os.path.exists(input_url):
-    #         return jsonify({"error": f"File not found at {input_url}"}), 400  # ✅ File check
  
-    print(f"Full Video Path: {input_url}");  # ✅ Debugging step
+    # (Optional) If using local files from a list, construct the full path.
+    # if source_type == "list":
+    #     input_url = os.path.join(VIDEO_FOLDER, input_url)
+    #     if not os.path.exists(input_url):
+    #         return jsonify({"error": f"File not found at {input_url}"}), 400
+ 
+    print(f"Full Video Path: {input_url}")  # ✅ Debugging
     
     if not streams:
         return jsonify({"error": "No output streams provided"}), 400  # ✅ Check if streams exist
  
+    # Extract output URLs from provided streams
     output_urls = [stream["url"] for stream in streams if "url" in stream]
  
+    # Check if this stream is already running
     if stream_id in processes:
         return jsonify({"error": f"Streams with ID {stream_id} are already running."}), 400
  
-    # ✅ Construct `tee` output string for multiple streams
-    tee_output = "|".join([f"[f=flv]{url}" for url in output_urls])
-     # Build the FFmpeg command
+    # Build the FFmpeg command
     ffmpeg_cmd = [
-            "ffmpeg", "-re", "-i", input_url,
-            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
-            "-c:v", "libx264", "-preset", "veryfast", "-b:v", "750K", "-maxrate", "750K", "-bufsize", "1500K",
-            "-c:a", "aac", "-b:a", "96K", "-ar", "44100"
-        ]
-    # Add multiple outputs
+        "/usr/bin/ffmpeg", "-re", "-i", input_url,
+        "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+        "-c:v", "libx264", "-preset", "veryfast", "-b:v", "750K", "-maxrate", "750K", "-bufsize", "1500K",
+        "-c:a", "aac", "-b:a", "96K", "-ar", "44100"
+    ]
+    
+    # Append output arguments for each output stream
     for output in output_urls:
-            ffmpeg_cmd.extend(["-map", "0:v", "-map", "0:a?", "-f", "flv", output])
-    print(f"Starting stream: {ffmpeg_cmd}")  # ✅ Debugging
-    process = subprocess.Popen(ffmpeg_cmd)
-  
-    print("✅ FFmpeg streaming successful!")
-    # Store process ID
-    processes[stream_id] = process
+        ffmpeg_cmd.extend(["-map", "0:v", "-map", "0:a?", "-f", "flv", output])
+    
+    print(f"Constructed FFmpeg command: {' '.join(ffmpeg_cmd)}")  # ✅ Debugging
+    
+    # Start the FFmpeg runner in a new thread so it can restart on failures
+    ffmpeg_thread = threading.Thread(target=ffmpeg_runner, args=(ffmpeg_cmd, stream_id), daemon=True)
+    ffmpeg_thread.start()
+    
+    # Store the thread object for later control/termination if needed
+    processes[stream_id] = ffmpeg_thread
  
-    # Prepare response data
-    active_processes = [{"streamId": stream["id"], "title": stream["title"], "outputUrl": stream["url"]} for stream in streams]
+    # Prepare response data for active streams
+    active_processes = [{
+        "streamId": stream["id"],
+        "title": stream["title"],
+        "outputUrl": stream["url"]
+    } for stream in streams]
  
-    # 🔹 Save data to JSON
-    save_stream_data({
+    # Save stream data to JSON (adjust save_stream_data to your implementation)
+    stream_data = {
         "date": data.get("date"),
         "streamDataId": stream_id,
         "scheduleType": data.get("scheduleType"),
@@ -130,13 +174,15 @@ def start_stream():
         "selectedSource": input_url,
         "streams": active_processes,
         "status": "active"
-    })
+    }
+    save_stream_data(stream_data)
  
     return jsonify({
         "message": "Streams started!",
         "is_streaming": True,
         "streams": active_processes
     })
+
 @routes.route("/stop-stream", methods=["POST"])
 def stop_stream():
     # Terminate all active streaming processes

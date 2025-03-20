@@ -12,4 +12,4 @@ OUTPUT_VIDEO_DIR_FFMPEG = 'output_videos'
 upload_video_folder = 'content-scheduler/uploaded_videos'
 
 # API Base URL for the fetcher service
-API_BASE_URL = "http://localhost:8080/api/v1/fetcher"
+API_BASE_URL = "http://video_pull_push_service:8080/api/v1/fetcher"
